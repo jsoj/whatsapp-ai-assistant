@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  whatsapp-ai-assistant:
+    build: .
+    container_name: whatsapp-ai-assistant
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - EVOLUTION_URL=${EVOLUTION_URL:-https://evolution.projetobrasil2050.site}
+      - EVOLUTION_APIKEY=${EVOLUTION_APIKEY:-6CBB7DCE6D50-4851-A607-F2EC2C1580C2}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-01}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - OWNER_NUMBERS=${OWNER_NUMBERS:-554388597348}
+      - DB_PATH=/app/data/conversations.db
+      - CONTEXT_FILE_PATH=/app/AGENTS.md
+    volumes:
+      - ./data:/app/data
+      - ~/.gemini/config/AGENTS.md:/app/AGENTS.md:ro
