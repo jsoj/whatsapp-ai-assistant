@@ -7,7 +7,7 @@ from src.context_loader import load_agents_context
 from src.tools import AVAILABLE_TOOLS
 
 def get_client() -> genai.Client:
-    api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")
+    api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY") or "AIzaSyC33gaQyuvQtfuDfyGgyvVAR3yss4CpNUY"
     return genai.Client(api_key=api_key)
 
 def generate_ai_response(phone_number: str, user_text: str, history: list[dict]) -> str:

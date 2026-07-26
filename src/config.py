@@ -11,7 +11,7 @@ class Settings:
     EVOLUTION_APIKEY: str = os.getenv("EVOLUTION_APIKEY", "6CBB7DCE6D50-4851-A607-F2EC2C1580C2")
     EVOLUTION_INSTANCE: str = os.getenv("EVOLUTION_INSTANCE", "01")
 
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "AIzaSyC33gaQyuvQtfuDfyGgyvVAR3yss4CpNUY")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     # Números autorizados (separados por vírgula)
