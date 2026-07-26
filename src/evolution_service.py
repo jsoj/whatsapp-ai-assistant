@@ -36,3 +36,31 @@ async def send_text_message(phone_number: str, text: str) -> bool:
     except Exception as e:
         print(f"❌ [Evolution API Exception]: {e}")
         return False
+
+async def fetch_media_base64(message_key: dict) -> str | None:
+    """
+    Busca o áudio/mídia em Base64 através da Evolution API.
+    """
+    url = f"{settings.EVOLUTION_URL}/chat/findMediaBase64/{settings.EVOLUTION_INSTANCE}"
+    headers = {
+        "apikey": settings.EVOLUTION_APIKEY,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "message": {
+            "key": message_key
+        },
+        "convertToMp3": False
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            if resp.status_code in [200, 201]:
+                data = resp.json()
+                return data.get("base64") or data.get("media")
+            else:
+                print(f"❌ [Evolution Media Error] Status {resp.status_code}: {resp.text}")
+    except Exception as e:
+        print(f"❌ [Evolution Media Exception]: {e}")
+    return None

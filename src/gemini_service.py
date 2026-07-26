@@ -45,3 +45,30 @@ def generate_ai_response(phone_number: str, user_text: str, history: list[dict])
             except Exception as e_fallback:
                 print(f"[Gemini Fallback Error]: {e_fallback}")
         return f"Desculpe, ocorreu um erro ao consultar o Gemini: {e}"
+
+def generate_ai_response_from_audio(phone_number: str, audio_base64: str, mime_type: str = "audio/ogg") -> str:
+    """
+    Processa uma mensagem de áudio enviada ao Gemini 2.5 Flash, transcreve e gera a resposta.
+    """
+    import base64
+    init_gemini()
+    system_instruction = load_agents_context()
+    model_name = settings.GEMINI_MODEL or "gemini-2.5-flash"
+
+    try:
+        raw_bytes = base64.b64decode(audio_base64)
+        audio_part = {
+            "mime_type": mime_type or "audio/ogg",
+            "data": raw_bytes
+        }
+
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            system_instruction=system_instruction
+        )
+        prompt = "Ouça atenciosamente este áudio do usuário, compreenda a solicitação e responda em português com base no seu contexto e regras."
+        response = model.generate_content([audio_part, prompt])
+        return response.text.strip()
+    except Exception as e:
+        print(f"[Gemini Audio Error]: {e}")
+        return f"Desculpe, ocorreu um erro ao processar seu áudio: {e}"

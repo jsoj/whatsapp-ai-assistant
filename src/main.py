@@ -5,8 +5,8 @@ from starlette.background import BackgroundTask
 from fastapi.responses import JSONResponse
 from src.config import settings
 from src.memory import init_db, add_message, get_recent_history
-from src.gemini_service import generate_ai_response
-from src.evolution_service import send_text_message
+from src.gemini_service import generate_ai_response, generate_ai_response_from_audio
+from src.evolution_service import send_text_message, fetch_media_base64
 from src.bot_state import is_bot_message
 
 @asynccontextmanager
@@ -37,7 +37,7 @@ def health_check():
 
 async def process_whatsapp_message(sender_number: str, message_text: str):
     """
-    Processa a mensagem em segundo plano: salva no banco, consulta o Gemini e responde no WhatsApp.
+    Processa a mensagem de texto em segundo plano: salva no banco, consulta o Gemini e responde no WhatsApp.
     """
     cleaned_sender = "".join(filter(str.isdigit, sender_number))
     
@@ -54,6 +54,28 @@ async def process_whatsapp_message(sender_number: str, message_text: str):
     add_message(cleaned_sender, "model", ai_response)
 
     # 5. Envia a resposta de volta ao WhatsApp via Evolution API
+    await send_text_message(cleaned_sender, ai_response)
+
+async def process_whatsapp_audio(sender_number: str, message_key: dict, mimetype: str):
+    """
+    Processa mensagem de áudio em segundo plano: baixa o áudio, envia ao Gemini multimodal e responde.
+    """
+    cleaned_sender = "".join(filter(str.isdigit, sender_number))
+    
+    # 1. Busca o conteúdo Base64 do áudio na Evolution API
+    audio_base64 = await fetch_media_base64(message_key)
+    
+    if not audio_base64:
+        ai_response = "Recebi seu áudio, mas não foi possível fazer o download para transcrição."
+    else:
+        # 2. Processa áudio no Gemini 2.5 Flash
+        ai_response = generate_ai_response_from_audio(cleaned_sender, audio_base64, mimetype)
+
+    # 3. Salva no histórico
+    add_message(cleaned_sender, "user", "[Mensagem de Áudio]")
+    add_message(cleaned_sender, "model", ai_response)
+
+    # 4. Envia resposta via Evolution API
     await send_text_message(cleaned_sender, ai_response)
 
 @app.post("/webhook/evolution")
@@ -88,8 +110,24 @@ async def webhook_evolution(request: Request):
             if not is_owner:
                 return JSONResponse({"status": "ignored", "reason": "message_from_me"})
 
-        # Extrai o texto da mensagem (conversation ou extendedTextMessage)
+        # Segurança: Verifica se o número remetente está na lista de números autorizados
+        authorized = any(owner in sender_number or sender_number in owner for owner in settings.owner_numbers)
+        if not authorized:
+            print(f"⚠️ [Security] Mensagem recebida de número não autorizado: {sender_number}")
+            return JSONResponse({"status": "unauthorized", "reason": "number_not_in_owner_list"})
+
         message = payload_data.get("message", {})
+
+        # Verifica se é mensagem de áudio (audioMessage)
+        audio_msg = message.get("audioMessage")
+        if audio_msg:
+            raw_mime = audio_msg.get("mimetype", "audio/ogg")
+            mimetype = raw_mime.split(";")[0]
+            print(f"🎙️ [Áudio Recebido de {sender_number}]: formato {mimetype}")
+            task = BackgroundTask(process_whatsapp_audio, sender_number, key, mimetype)
+            return JSONResponse({"status": "processing_audio", "sender": sender_number}, background=task)
+
+        # Extrai o texto da mensagem (conversation ou extendedTextMessage)
         message_text = (
             message.get("conversation") or
             message.get("extendedTextMessage", {}).get("text") or
@@ -97,22 +135,11 @@ async def webhook_evolution(request: Request):
         )
 
         if not message_text:
-            return JSONResponse({"status": "ignored", "reason": "no_text_content"})
-
-        # Segurança: Verifica se o número remetente está na lista de números autorizados
-        authorized = False
-        for owner in settings.owner_numbers:
-            if owner in sender_number or sender_number in owner:
-                authorized = True
-                break
-
-        if not authorized:
-            print(f"⚠️ [Security] Mensagem recebida de número não autorizado: {sender_number}")
-            return JSONResponse({"status": "unauthorized", "reason": "number_not_in_owner_list"})
+            return JSONResponse({"status": "ignored", "reason": "no_supported_content"})
 
         print(f"📩 [Mensagem Recebida de {sender_number}]: {message_text}")
 
-        # Processa em background para responder rapidamente ao webhook da Evolution API
+        # Processa texto em background
         task = BackgroundTask(process_whatsapp_message, sender_number, message_text)
         return JSONResponse({"status": "processing", "sender": sender_number}, background=task)
 
