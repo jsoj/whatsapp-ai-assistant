@@ -41,7 +41,7 @@ async def fetch_media_base64(message_key: dict) -> str | None:
     """
     Busca o áudio/mídia em Base64 através da Evolution API.
     """
-    url = f"{settings.EVOLUTION_URL}/chat/findMediaBase64/{settings.EVOLUTION_INSTANCE}"
+    url = f"{settings.EVOLUTION_URL}/chat/getBase64FromMediaMessage/{settings.EVOLUTION_INSTANCE}"
     headers = {
         "apikey": settings.EVOLUTION_APIKEY,
         "Content-Type": "application/json"
