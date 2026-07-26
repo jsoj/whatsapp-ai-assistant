@@ -58,7 +58,7 @@ async def process_whatsapp_message(sender_number: str, message_text: str):
 
 async def process_whatsapp_audio(sender_number: str, message_key: dict, mimetype: str):
     """
-    Processa mensagem de áudio em segundo plano: baixa o áudio, envia ao Gemini multimodal e responde.
+    Processa mensagem de áudio em segundo plano: baixa o áudio, envia ao Gemini multimodal e responde em áudio e texto.
     """
     cleaned_sender = "".join(filter(str.isdigit, sender_number))
     
@@ -75,7 +75,8 @@ async def process_whatsapp_audio(sender_number: str, message_key: dict, mimetype
     add_message(cleaned_sender, "user", "[Mensagem de Áudio]")
     add_message(cleaned_sender, "model", ai_response)
 
-    # 4. Envia resposta via Evolution API
+    # 4. Envia resposta em ÁUDIO DE VOZ e TEXTO no WhatsApp
+    await send_audio_message(cleaned_sender, ai_response)
     await send_text_message(cleaned_sender, ai_response)
 
 @app.post("/webhook/evolution")
