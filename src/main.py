@@ -7,6 +7,7 @@ from src.config import settings
 from src.memory import init_db, add_message, get_recent_history
 from src.gemini_service import generate_ai_response
 from src.evolution_service import send_text_message
+from src.bot_state import is_bot_message
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -71,13 +72,21 @@ async def webhook_evolution(request: Request):
     if event in ["messages.upsert", "SEND_MESSAGE"]:
         payload_data = data.get("data", {})
         key = payload_data.get("key", {})
-        
-        # Ignora mensagens enviadas pelo próprio bot (fromMe == True)
-        if key.get("fromMe") is True:
-            return JSONResponse({"status": "ignored", "reason": "message_from_me"})
+        msg_id = key.get("id", "")
+
+        # Ignora mensagens geradas pela própria resposta da IA
+        if is_bot_message(msg_id):
+            return JSONResponse({"status": "ignored", "reason": "bot_own_message"})
 
         remote_jid = key.get("remoteJid", "")
         sender_number = "".join(filter(str.isdigit, remote_jid.split("@")[0]))
+
+        # Se fromMe == True (ex: enviando mensagem para si mesmo no WhatsApp)
+        # só aceita se o número do remetente for um dono autorizado
+        if key.get("fromMe") is True:
+            is_owner = any(owner in sender_number or sender_number in owner for owner in settings.owner_numbers)
+            if not is_owner:
+                return JSONResponse({"status": "ignored", "reason": "message_from_me"})
 
         # Extrai o texto da mensagem (conversation ou extendedTextMessage)
         message = payload_data.get("message", {})
