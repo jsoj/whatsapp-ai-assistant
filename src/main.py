@@ -27,6 +27,7 @@ app = FastAPI(
 # Inicializa o DB ao carregar a aplicação
 init_db()
 
+@app.get("/")
 @app.get("/health")
 def health_check():
     return {
