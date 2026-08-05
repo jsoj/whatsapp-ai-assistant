@@ -7,19 +7,41 @@ env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 class Settings:
-    EVOLUTION_URL: str = os.getenv("EVOLUTION_URL", "https://evolution.quantisia.com.br").rstrip("/")
-    EVOLUTION_APIKEY: str = os.getenv("EVOLUTION_APIKEY", "6CBB7DCE6D50-4851-A607-F2EC2C1580C2")
-    EVOLUTION_INSTANCE: str = os.getenv("EVOLUTION_INSTANCE", "01")
+    @property
+    def EVOLUTION_URL(self) -> str:
+        return os.getenv("EVOLUTION_URL", "https://evolution.quantisia.com.br").rstrip("/")
 
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "AIzaSyC33gaQyuvQtfuDfyGgyvVAR3yss4CpNUY")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    @property
+    def EVOLUTION_APIKEY(self) -> str:
+        return os.getenv("EVOLUTION_APIKEY", "")
 
-    # Números autorizados (separados por vírgula)
-    OWNER_NUMBERS_RAW: str = os.getenv("OWNER_NUMBERS", "554388597348")
+    @property
+    def EVOLUTION_INSTANCE(self) -> str:
+        return os.getenv("EVOLUTION_INSTANCE", "01")
 
-    DB_PATH: str = os.getenv("DB_PATH", "data/conversations.db")
-    CONTEXT_FILE_PATH: str = os.getenv("CONTEXT_FILE_PATH", str(Path.home() / ".gemini" / "config" / "AGENTS.md"))
-    PORT: int = int(os.getenv("PORT", "8000"))
+    @property
+    def GEMINI_API_KEY(self) -> str:
+        return os.getenv("GEMINI_API_KEY", "")
+
+    @property
+    def GEMINI_MODEL(self) -> str:
+        return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+    @property
+    def OWNER_NUMBERS_RAW(self) -> str:
+        return os.getenv("OWNER_NUMBERS", "554388597348,5543988597348")
+
+    @property
+    def DB_PATH(self) -> str:
+        return os.getenv("DB_PATH", "data/conversations.db")
+
+    @property
+    def CONTEXT_FILE_PATH(self) -> str:
+        return os.getenv("CONTEXT_FILE_PATH", str(Path.home() / ".gemini" / "config" / "AGENTS.md"))
+
+    @property
+    def PORT(self) -> int:
+        return int(os.getenv("PORT", "8000"))
 
     @property
     def owner_numbers(self) -> list[str]:
