@@ -33,11 +33,11 @@ def test_webhook_ignored_from_me():
         "event": "messages.upsert",
         "data": {
             "key": {
-                "remoteJid": "554388597348@s.whatsapp.net",
+                "remoteJid": "5511888888888@s.whatsapp.net",
                 "fromMe": True
             },
             "message": {
-                "conversation": "Mensagem enviada por mim"
+                "conversation": "Mensagem enviada por mim não autorizada"
             }
         }
     }
