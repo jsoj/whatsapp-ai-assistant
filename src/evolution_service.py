@@ -37,7 +37,7 @@ async def send_text_message(phone_number: str, text: str) -> bool:
         print(f"❌ [Evolution API Exception]: {e}")
         return False
 
-async def fetch_media_base64(message_key: dict) -> str | None:
+async def fetch_media_base64(payload_or_key: dict) -> str | None:
     """
     Busca o áudio/mídia em Base64 através da Evolution API.
     """
@@ -46,10 +46,11 @@ async def fetch_media_base64(message_key: dict) -> str | None:
         "apikey": settings.EVOLUTION_APIKEY,
         "Content-Type": "application/json"
     }
+    
+    # Prepara a mensagem conforme o formato enviado (objeto data completo ou dict key)
+    msg_obj = payload_or_key if "key" in payload_or_key and "message" in payload_or_key else {"key": payload_or_key}
     payload = {
-        "message": {
-            "key": message_key
-        },
+        "message": msg_obj,
         "convertToMp3": False
     }
 
@@ -61,6 +62,12 @@ async def fetch_media_base64(message_key: dict) -> str | None:
                 return data.get("base64") or data.get("media")
             else:
                 print(f"❌ [Evolution Media Error] Status {resp.status_code}: {resp.text}")
+                # Tentativa de fallback com payload simples
+                fallback_payload = {"message": {"key": payload_or_key.get("key", payload_or_key)}}
+                resp_fb = await client.post(url, json=fallback_payload, headers=headers)
+                if resp_fb.status_code in [200, 201]:
+                    data_fb = resp_fb.json()
+                    return data_fb.get("base64") or data_fb.get("media")
     except Exception as e:
         print(f"❌ [Evolution Media Exception]: {e}")
     return None
@@ -71,7 +78,6 @@ async def send_audio_message(phone_number: str, text: str) -> bool:
     """
     from io import BytesIO
     import base64
-    from gtts import gTTS
 
     cleaned_number = "".join(filter(str.isdigit, phone_number))
     url = f"{settings.EVOLUTION_URL}/message/sendWhatsAppAudio/{settings.EVOLUTION_INSTANCE}"
@@ -82,6 +88,7 @@ async def send_audio_message(phone_number: str, text: str) -> bool:
     }
 
     try:
+        from gtts import gTTS
         # Limpa formatação markdown para leitura fluida da voz
         clean_text = text.replace("*", "").replace("#", "").replace("`", "").replace("_", "")
         tts = gTTS(text=clean_text, lang='pt', tld='com.br')

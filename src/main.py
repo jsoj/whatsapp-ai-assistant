@@ -60,27 +60,33 @@ async def process_whatsapp_message(sender_number: str, message_text: str):
         print(f"❌ [Task Error]: {e}")
         await send_text_message(cleaned_sender, f"⚠️ Ocorreu um erro interno no processamento: {e}")
 
-async def process_whatsapp_audio(sender_number: str, message_key: dict, mimetype: str):
+async def process_whatsapp_audio(sender_number: str, payload_data: dict, mimetype: str):
     """
     Processa mensagem de áudio em segundo plano: baixa o áudio, envia ao Gemini multimodal e responde em áudio e texto.
     """
     cleaned_sender = "".join(filter(str.isdigit, sender_number))
     try:
         # 1. Busca o conteúdo Base64 do áudio na Evolution API
-        audio_base64 = await fetch_media_base64(message_key)
+        audio_base64 = await fetch_media_base64(payload_data)
         
         if not audio_base64:
-            ai_response = "Recebi seu áudio, mas não foi possível fazer o download para transcrição."
+            print(f"⚠️ [Audio Download Warning] Não foi possível baixar áudio de {cleaned_sender}")
+            ai_response = "Recebi seu áudio, mas não consegui realizar o download para transcrição. Por favor, tente enviar novamente ou em texto."
         else:
-            # 2. Processa áudio no Gemini 2.5 Flash
+            # 2. Processa áudio no Gemini Multimodal
             ai_response = generate_ai_response_from_audio(cleaned_sender, audio_base64, mimetype)
 
         # 3. Salva no histórico
         add_message(cleaned_sender, "user", "[Mensagem de Áudio]")
         add_message(cleaned_sender, "model", ai_response)
 
-        # 4. Envia resposta em ÁUDIO DE VOZ e TEXTO no WhatsApp
-        await send_audio_message(cleaned_sender, ai_response)
+        # 4. Tenta enviar resposta em ÁUDIO DE VOZ (se falhar, não impede o envio em TEXTO)
+        try:
+            await send_audio_message(cleaned_sender, ai_response)
+        except Exception as audio_err:
+            print(f"⚠️ [Audio Send Warning]: {audio_err}")
+
+        # 5. Envia resposta em TEXTO no WhatsApp
         await send_text_message(cleaned_sender, ai_response)
     except Exception as e:
         print(f"❌ [Audio Task Error]: {e}")
@@ -132,7 +138,7 @@ async def webhook_evolution(request: Request):
             raw_mime = audio_msg.get("mimetype", "audio/ogg")
             mimetype = raw_mime.split(";")[0]
             print(f"🎙️ [Áudio Recebido de {sender_number}]: formato {mimetype}")
-            task = BackgroundTask(process_whatsapp_audio, sender_number, key, mimetype)
+            task = BackgroundTask(process_whatsapp_audio, sender_number, payload_data, mimetype)
             return JSONResponse({"status": "processing_audio", "sender": sender_number}, background=task)
 
         # Extrai o texto da mensagem (conversation ou extendedTextMessage)
