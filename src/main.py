@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from src.config import settings
 from src.memory import init_db, add_message, get_recent_history
 from src.gemini_service import generate_ai_response, generate_ai_response_from_audio
-from src.evolution_service import send_text_message, fetch_media_base64
+from src.evolution_service import send_text_message, fetch_media_base64, send_audio_message
 from src.bot_state import is_bot_message
 
 @asynccontextmanager
