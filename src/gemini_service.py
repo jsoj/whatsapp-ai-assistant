@@ -8,10 +8,11 @@ from src.context_loader import load_agents_context
 from src.tools import AVAILABLE_TOOLS
 
 FALLBACK_MODELS = [
+    "gemini-3.6-flash",
+    "gemini-3-flash-preview",
+    "gemini-flash-latest",
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro"
+    "gemini-2.0-flash"
 ]
 
 def get_client() -> genai.Client:
@@ -24,7 +25,7 @@ def generate_ai_response(phone_number: str, user_text: str, history: list[dict])
     """
     client = get_client()
     system_instruction = load_agents_context()
-    primary_model = settings.GEMINI_MODEL or "gemini-2.5-flash"
+    primary_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
     
     models_to_try = [primary_model] + [m for m in FALLBACK_MODELS if m != primary_model]
 
@@ -50,8 +51,8 @@ def generate_ai_response(phone_number: str, user_text: str, history: list[dict])
             err_str = str(e)
             print(f"⚠️ [Gemini Error] Modelo {model_name} falhou: {err_str[:200]}")
             last_error = e
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                print(f"🔄 Limite de cota atingido no {model_name}. Tentando próximo modelo de fallback...")
+            if "429" in err_str or "404" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower() or "NOT_FOUND" in err_str:
+                print(f"🔄 Modelo {model_name} indisponível (Erro 429/404). Tentando próximo modelo da lista...")
                 time.sleep(1)
                 continue
             else:
@@ -65,7 +66,7 @@ def generate_ai_response_from_audio(phone_number: str, audio_base64: str, mime_t
     """
     client = get_client()
     system_instruction = load_agents_context()
-    primary_model = settings.GEMINI_MODEL or "gemini-2.5-flash"
+    primary_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
     models_to_try = [primary_model] + [m for m in FALLBACK_MODELS if m != primary_model]
 
     raw_bytes = base64.b64decode(audio_base64)
@@ -98,8 +99,8 @@ def generate_ai_response_from_audio(phone_number: str, audio_base64: str, mime_t
             err_str = str(e)
             print(f"⚠️ [Gemini Audio Error] Modelo {model_name} falhou: {err_str[:200]}")
             last_error = e
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
-                print(f"🔄 Limite de cota de áudio atingido no {model_name}. Tentando próximo modelo...")
+            if "429" in err_str or "404" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower() or "NOT_FOUND" in err_str:
+                print(f"🔄 Modelo {model_name} indisponível ({err_str[:50]}). Tentando próximo modelo...")
                 time.sleep(1)
                 continue
             else:
