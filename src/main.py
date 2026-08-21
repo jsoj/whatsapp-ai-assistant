@@ -6,7 +6,14 @@ from fastapi.responses import JSONResponse
 from src.config import settings
 from src.memory import init_db, add_message, get_recent_history
 from src.gemini_service import generate_ai_response, generate_ai_response_from_audio
-from src.evolution_service import send_text_message, fetch_media_base64, send_audio_message
+from src.antigravity_service import run_antigravity_agent, transcribe_audio
+from src.evolution_service import (
+    send_text_message,
+    fetch_media_base64,
+    send_audio_message,
+    send_presence,
+    send_reaction
+)
 from src.bot_state import is_bot_message
 
 @asynccontextmanager
@@ -15,12 +22,13 @@ async def lifespan(app: FastAPI):
     print(f"🚀 [WhatsApp AI Assistant] Inicializado na porta {settings.PORT}")
     print(f"📌 [Config] Evolution URL: {settings.EVOLUTION_URL}")
     print(f"📌 [Config] Números autorizados: {settings.owner_numbers}")
+    print(f"🤖 [Config] Antigravity Motor Ativo: {settings.USE_ANTIGRAVITY_AGENT}")
     yield
 
 app = FastAPI(
-    title="WhatsApp AI Assistant",
-    description="Microserviço integrando Evolution API e Gemini API com o contexto global do projeto",
-    version="1.0.0",
+    title="WhatsApp AI Assistant (Antigravity Engine)",
+    description="Microserviço integrando Evolution API e o Agente Antigravity com acesso total ao contexto da VPS",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -33,54 +41,93 @@ def health_check():
     return {
         "status": "ok",
         "app": "whatsapp-ai-assistant",
+        "engine": "antigravity-agent" if settings.USE_ANTIGRAVITY_AGENT else "gemini-direct",
         "authorized_owners": settings.owner_numbers
     }
 
-async def process_whatsapp_message(sender_number: str, message_text: str):
+async def process_whatsapp_message(sender_number: str, message_text: str, message_key: dict = None):
     """
-    Processa a mensagem de texto em segundo plano: salva no banco, consulta o Gemini e responde no WhatsApp.
+    Processa a mensagem de texto:
+    1. Envia status 'digitando...' e reação 🤖 no WhatsApp
+    2. Executa a instrução no motor do Antigravity (com histórico e ferramentas)
+    3. Salva no banco de dados
+    4. Envia resposta de volta e atualiza reação para ✅
     """
     cleaned_sender = "".join(filter(str.isdigit, sender_number))
     try:
-        # 1. Salva mensagem do usuário no banco
+        # Indicadores imediatos no WhatsApp
+        await send_presence(cleaned_sender, "composing")
+        if message_key:
+            await send_reaction(message_key, "🤖")
+
+        # Salva mensagem do usuário no banco
         add_message(cleaned_sender, "user", message_text)
 
-        # 2. Busca histórico recente da conversa
-        history = get_recent_history(cleaned_sender, limit=14)
+        if settings.USE_ANTIGRAVITY_AGENT:
+            # Executa com o motor completo do Antigravity CLI
+            ai_response = await run_antigravity_agent(cleaned_sender, message_text)
+        else:
+            # Fallback direto SDK Gemini
+            history = get_recent_history(cleaned_sender, limit=14)
+            ai_response = generate_ai_response(cleaned_sender, message_text, history)
 
-        # 3. Gera resposta inteligente com o Gemini (carregando contexto AGENTS.md)
-        ai_response = generate_ai_response(cleaned_sender, message_text, history)
-
-        # 4. Salva a resposta da IA no banco
+        # Salva a resposta da IA no banco
         add_message(cleaned_sender, "model", ai_response)
 
-        # 5. Envia a resposta de volta ao WhatsApp via Evolution API
+        # Envia a resposta de volta ao WhatsApp via Evolution API
         await send_text_message(cleaned_sender, ai_response)
+
+        # Atualiza a reação para indicar conclusão
+        if message_key:
+            await send_reaction(message_key, "✅")
+
     except Exception as e:
         print(f"❌ [Task Error]: {e}")
-        await send_text_message(cleaned_sender, f"⚠️ Ocorreu um erro interno no processamento: {e}")
+        await send_text_message(cleaned_sender, f"⚠️ Ocorreu um erro no processamento: {e}")
+        if message_key:
+            await send_reaction(message_key, "❌")
 
-async def process_whatsapp_audio(sender_number: str, payload_data: dict, mimetype: str):
+async def process_whatsapp_audio(sender_number: str, payload_data: dict, mimetype: str, message_key: dict = None):
     """
-    Processa mensagem de áudio em segundo plano: baixa o áudio, envia ao Gemini multimodal e responde em áudio e texto.
+    Processa mensagem de áudio:
+    1. Baixa o áudio via Evolution API
+    2. Transcreve o áudio com Gemini Multimodal
+    3. Envia o texto resultante para o motor Antigravity
+    4. Responde em texto (e opcionalmente áudio) no WhatsApp
     """
     cleaned_sender = "".join(filter(str.isdigit, sender_number))
     try:
-        # 1. Busca o conteúdo Base64 do áudio na Evolution API
+        await send_presence(cleaned_sender, "recording")
+        if message_key:
+            await send_reaction(message_key, "🎙️")
+
+        # 1. Baixa o conteúdo Base64 do áudio
         audio_base64 = await fetch_media_base64(payload_data)
         
         if not audio_base64:
             print(f"⚠️ [Audio Download Warning] Não foi possível baixar áudio de {cleaned_sender}")
-            ai_response = "Recebi seu áudio, mas não consegui realizar o download para transcrição. Por favor, tente enviar novamente ou em texto."
+            await send_text_message(cleaned_sender, "Recebi seu áudio, mas não consegui realizar o download para transcrição. Por favor, tente enviar em texto.")
+            return
+
+        # 2. Transcrição do áudio
+        transcription = transcribe_audio(audio_base64, mimetype)
+        if transcription:
+            print(f"📝 [Transcrição Áudio de {cleaned_sender}]: {transcription}")
+            prompt_text = f"[Mensagem de Áudio Transcrita]: {transcription}"
         else:
-            # 2. Processa áudio no Gemini Multimodal
+            prompt_text = "Processe o áudio enviado pelo usuário e execute as tarefas solicitadas."
+
+        add_message(cleaned_sender, "user", f"[Áudio]: {transcription or 'Áudio recebido'}")
+
+        # 3. Execução no Antigravity
+        if settings.USE_ANTIGRAVITY_AGENT:
+            ai_response = await run_antigravity_agent(cleaned_sender, prompt_text)
+        else:
             ai_response = generate_ai_response_from_audio(cleaned_sender, audio_base64, mimetype)
 
-        # 3. Salva no histórico
-        add_message(cleaned_sender, "user", "[Mensagem de Áudio]")
         add_message(cleaned_sender, "model", ai_response)
 
-        # 4. Tenta enviar resposta em ÁUDIO DE VOZ (se falhar, não impede o envio em TEXTO)
+        # 4. Envia resposta em ÁUDIO DE VOZ (se disponível)
         try:
             await send_audio_message(cleaned_sender, ai_response)
         except Exception as audio_err:
@@ -88,9 +135,15 @@ async def process_whatsapp_audio(sender_number: str, payload_data: dict, mimetyp
 
         # 5. Envia resposta em TEXTO no WhatsApp
         await send_text_message(cleaned_sender, ai_response)
+
+        if message_key:
+            await send_reaction(message_key, "✅")
+
     except Exception as e:
         print(f"❌ [Audio Task Error]: {e}")
         await send_text_message(cleaned_sender, f"⚠️ Ocorreu um erro ao processar seu áudio: {e}")
+        if message_key:
+            await send_reaction(message_key, "❌")
 
 @app.post("/webhook/evolution")
 async def webhook_evolution(request: Request):
@@ -138,7 +191,7 @@ async def webhook_evolution(request: Request):
             raw_mime = audio_msg.get("mimetype", "audio/ogg")
             mimetype = raw_mime.split(";")[0]
             print(f"🎙️ [Áudio Recebido de {sender_number}]: formato {mimetype}")
-            task = BackgroundTask(process_whatsapp_audio, sender_number, payload_data, mimetype)
+            task = BackgroundTask(process_whatsapp_audio, sender_number, payload_data, mimetype, key)
             return JSONResponse({"status": "processing_audio", "sender": sender_number}, background=task)
 
         # Extrai o texto da mensagem (conversation ou extendedTextMessage)
@@ -154,7 +207,7 @@ async def webhook_evolution(request: Request):
         print(f"📩 [Mensagem Recebida de {sender_number}]: {message_text}")
 
         # Processa texto em background
-        task = BackgroundTask(process_whatsapp_message, sender_number, message_text)
+        task = BackgroundTask(process_whatsapp_message, sender_number, message_text, key)
         return JSONResponse({"status": "processing", "sender": sender_number}, background=task)
 
     return JSONResponse({"status": "ignored", "event": event})

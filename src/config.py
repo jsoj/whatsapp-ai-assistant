@@ -44,6 +44,22 @@ class Settings:
         return int(os.getenv("PORT", "8000"))
 
     @property
+    def AGY_BIN_PATH(self) -> str:
+        return os.getenv("AGY_BIN_PATH", "/root/.local/bin/agy")
+
+    @property
+    def AGY_WORKSPACE(self) -> str:
+        return os.getenv("AGY_WORKSPACE", "/root")
+
+    @property
+    def AGY_TIMEOUT(self) -> int:
+        return int(os.getenv("AGY_TIMEOUT", "180"))
+
+    @property
+    def USE_ANTIGRAVITY_AGENT(self) -> bool:
+        return os.getenv("USE_ANTIGRAVITY_AGENT", "true").lower() in ("true", "1", "yes")
+
+    @property
     def owner_numbers(self) -> list[str]:
         """Retorna a lista de números autorizados higienizados (apenas dígitos)."""
         numbers = []

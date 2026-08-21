@@ -16,7 +16,7 @@ def get_db_connection(db_path: str = None) -> sqlite3.Connection:
     return conn
 
 def init_db(db_path: str = None):
-    """Inicializa a tabela de conversas se não existir."""
+    """Inicializa as tabelas de conversas e sessões do Antigravity se não existirem."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
     cursor.execute("""
@@ -30,6 +30,14 @@ def init_db(db_path: str = None):
     """)
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_phone_timestamp ON messages (phone_number, timestamp)
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS agy_sessions (
+            phone_number TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
     """)
     conn.commit()
     conn.close()
@@ -72,5 +80,45 @@ def clear_history(phone_number: str, db_path: str = None):
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM messages WHERE phone_number = ?", (cleaned_number,))
+    cursor.execute("DELETE FROM agy_sessions WHERE phone_number = ?", (cleaned_number,))
     conn.commit()
     conn.close()
+
+def get_agy_session(phone_number: str, db_path: str = None) -> str | None:
+    """Busca o conversation_id do Antigravity para este número de telefone."""
+    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT conversation_id FROM agy_sessions WHERE phone_number = ?", (cleaned_number,))
+    row = cursor.fetchone()
+    conn.close()
+    return row["conversation_id"] if row else None
+
+def set_agy_session(phone_number: str, conversation_id: str, db_path: str = None):
+    """Registra ou atualiza o conversation_id do Antigravity para este número."""
+    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO agy_sessions (phone_number, conversation_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(phone_number) DO UPDATE SET
+            conversation_id = excluded.conversation_id,
+            updated_at = excluded.updated_at
+        """,
+        (cleaned_number, conversation_id, now, now)
+    )
+    conn.commit()
+    conn.close()
+
+def reset_agy_session(phone_number: str, db_path: str = None):
+    """Reseta a sessão do Antigravity forçando uma nova conversa na próxima mensagem."""
+    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM agy_sessions WHERE phone_number = ?", (cleaned_number,))
+    conn.commit()
+    conn.close()
+

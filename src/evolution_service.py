@@ -120,3 +120,57 @@ async def send_audio_message(phone_number: str, text: str) -> bool:
     except Exception as e:
         print(f"❌ [Evolution Audio Exception]: {e}")
         return False
+
+async def send_presence(phone_number: str, presence: str = "composing") -> bool:
+    """
+    Envia indicador de presença ('composing' ou 'recording') no chat do WhatsApp.
+    """
+    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    url = f"{settings.EVOLUTION_URL}/chat/sendPresence/{settings.EVOLUTION_INSTANCE}"
+    
+    headers = {
+        "apikey": settings.EVOLUTION_APIKEY,
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "number": cleaned_number,
+        "presence": presence,
+        "delay": 1200
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            return resp.status_code in [200, 201]
+    except Exception as e:
+        print(f"⚠️ [Evolution Presence Exception]: {e}")
+        return False
+
+async def send_reaction(message_key: dict, reaction: str = "🤖") -> bool:
+    """
+    Envia uma reação de emoji para a mensagem do usuário no WhatsApp.
+    """
+    if not message_key:
+        return False
+
+    url = f"{settings.EVOLUTION_URL}/message/sendReaction/{settings.EVOLUTION_INSTANCE}"
+    
+    headers = {
+        "apikey": settings.EVOLUTION_APIKEY,
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "key": message_key,
+        "reaction": reaction
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            return resp.status_code in [200, 201]
+    except Exception as e:
+        print(f"⚠️ [Evolution Reaction Exception]: {e}")
+        return False
+
