@@ -76,6 +76,7 @@ async def send_audio_message(phone_number: str, text: str) -> bool:
     """
     Converte texto em áudio via gTTS e envia como mensagem de voz no WhatsApp via Evolution API.
     """
+    import re
     from io import BytesIO
     import base64
 
@@ -87,22 +88,30 @@ async def send_audio_message(phone_number: str, text: str) -> bool:
         "Content-Type": "application/json"
     }
 
-    try:
+    def _generate_tts_base64(raw_text: str) -> str:
         from gtts import gTTS
-        # Limpa formatação markdown para leitura fluida da voz
-        clean_text = text.replace("*", "").replace("#", "").replace("`", "").replace("_", "")
-        tts = gTTS(text=clean_text, lang='pt', tld='com.br')
+        # Limpa links markdown [texto](url) -> texto
+        clean = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', raw_text)
+        # Limpa formatação markdown (*, _, #, `, ~, >, -)
+        clean = re.sub(r'[*_#`~>|-]', ' ', clean)
+        clean = re.sub(r'\s+', ' ', clean).strip()
+        # Limita para os primeiros 800 caracteres para fala concisa
+        if len(clean) > 800:
+            clean = clean[:800] + "..."
+
+        tts = gTTS(text=clean, lang='pt', tld='com.br')
         mp3_fp = BytesIO()
         tts.write_to_fp(mp3_fp)
         mp3_fp.seek(0)
-        
-        audio_base64 = base64.b64encode(mp3_fp.read()).decode('utf-8')
-        audio_data_uri = f"data:audio/mp3;base64,{audio_base64}"
+        return base64.b64encode(mp3_fp.read()).decode('utf-8')
+
+    try:
+        audio_base64 = await asyncio.to_thread(_generate_tts_base64, text)
 
         payload = {
             "number": cleaned_number,
-            "audio": audio_data_uri,
-            "delay": 1000
+            "audio": audio_base64,
+            "encoding": True
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -112,7 +121,7 @@ async def send_audio_message(phone_number: str, text: str) -> bool:
                 msg_id = res_data.get("key", {}).get("id")
                 if msg_id:
                     register_bot_message_id(msg_id)
-                print(f"🎙️ [Evolution API] Áudio de resposta enviado com sucesso para {cleaned_number}")
+                print(f"🎙️ [Evolution API] Áudio de resposta enviado com sucesso para {cleaned_number} (ID: {msg_id})")
                 return True
             else:
                 print(f"❌ [Evolution Audio Error] Status {resp.status_code}: {resp.text}")

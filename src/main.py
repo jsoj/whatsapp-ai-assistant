@@ -81,6 +81,13 @@ async def process_whatsapp_message(sender_number: str, message_text: str, messag
         if message_key:
             await send_reaction(message_key, "✅")
 
+        # Se o usuário pediu resposta em áudio no texto, envia voz também
+        if any(keyword in message_text.lower() for keyword in ["em áudio", "em audio", "mande áudio", "mande audio", "fale comigo", "responda por áudio", "responda por audio"]):
+            try:
+                await send_audio_message(cleaned_sender, ai_response)
+            except Exception as audio_err:
+                print(f"⚠️ [Audio Send Warning]: {audio_err}")
+
     except Exception as e:
         print(f"❌ [Task Error]: {e}")
         await send_text_message(cleaned_sender, f"⚠️ Ocorreu um erro no processamento: {e}")
