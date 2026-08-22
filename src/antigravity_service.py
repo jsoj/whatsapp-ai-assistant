@@ -54,12 +54,18 @@ async def run_antigravity_agent(phone_number: str, prompt: str) -> str:
     # Mapeia sessões anteriores para detectar nova criação
     before_sessions = get_brain_sessions()
 
-    # 3. Monta comando
-    cmd = [agy_bin, "-p", prompt, "--dangerously-skip-permissions"]
+    # 3. Monta comando otimizado para velocidade
+    cmd = [
+        agy_bin,
+        "-p", prompt,
+        "--effort", settings.AGY_EFFORT,
+        "--disable-slash-commands",
+        "--dangerously-skip-permissions"
+    ]
     if existing_session:
         cmd.extend(["--conversation", existing_session])
 
-    print(f"🤖 [Antigravity Service] Executando agy para {phone_number} (Sessão: {existing_session or 'Nova'})...")
+    print(f"🤖 [Antigravity Service] Executando agy para {phone_number} (Sessão: {existing_session or 'Nova'}, Effort: {settings.AGY_EFFORT})...")
     start_time = time.time()
 
     try:
@@ -96,17 +102,13 @@ async def run_antigravity_agent(phone_number: str, prompt: str) -> str:
             return clean_agy_output(out_text)
         else:
             print(f"⚠️ [Antigravity Non-Zero/Empty] Return code: {proc.returncode}. Stderr: {err_text[:300]}")
-            # Fallback para o Gemini direto caso agy retorne vazio ou erro
             return generate_ai_response(phone_number, prompt, [])
 
     except Exception as e:
         print(f"❌ [Antigravity Service Error]: {e}. Acionando fallback Gemini...")
         return generate_ai_response(phone_number, prompt, [])
 
-def transcribe_audio(audio_base64: str, mime_type: str = "audio/ogg") -> str | None:
-    """
-    Transcreve áudio com o Gemini Multimodal para encaminhar como texto ao Antigravity.
-    """
+def _sync_transcribe(audio_base64: str, mime_type: str) -> str | None:
     api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
     if not api_key:
         return None
@@ -120,16 +122,19 @@ def transcribe_audio(audio_base64: str, mime_type: str = "audio/ogg") -> str | N
 
     prompt = "Transcreva com máxima fidelidade e em português brasileiro exatamente o que foi falado neste áudio. Retorne APENAS a transcrição pura, sem aspas, explicações ou notas."
 
-    for model_name in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-3.6-flash"]:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[audio_part, prompt]
-            )
-            if response and response.text:
-                return response.text.strip()
-        except Exception as e:
-            print(f"⚠️ [Audio Transcription Error] Modelo {model_name}: {e}")
-            continue
-
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[audio_part, prompt]
+        )
+        if response and response.text:
+            return response.text.strip()
+    except Exception as e:
+        print(f"⚠️ [Audio Transcription Error]: {e}")
     return None
+
+async def transcribe_audio(audio_base64: str, mime_type: str = "audio/ogg") -> str | None:
+    """
+    Transcreve áudio com o Gemini Multimodal de forma assíncrona (1-2s).
+    """
+    return await asyncio.to_thread(_sync_transcribe, audio_base64, mime_type)

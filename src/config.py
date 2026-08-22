@@ -56,6 +56,10 @@ class Settings:
         return int(os.getenv("AGY_TIMEOUT", "180"))
 
     @property
+    def AGY_EFFORT(self) -> str:
+        return os.getenv("AGY_EFFORT", "low")
+
+    @property
     def USE_ANTIGRAVITY_AGENT(self) -> bool:
         return os.getenv("USE_ANTIGRAVITY_AGENT", "true").lower() in ("true", "1", "yes")
 

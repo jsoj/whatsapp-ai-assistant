@@ -109,8 +109,8 @@ async def process_whatsapp_audio(sender_number: str, payload_data: dict, mimetyp
             await send_text_message(cleaned_sender, "Recebi seu áudio, mas não consegui realizar o download para transcrição. Por favor, tente enviar em texto.")
             return
 
-        # 2. Transcrição do áudio
-        transcription = transcribe_audio(audio_base64, mimetype)
+        # 2. Transcrição do áudio ultrarrápida (Gemini Flash async)
+        transcription = await transcribe_audio(audio_base64, mimetype)
         if transcription:
             print(f"📝 [Transcrição Áudio de {cleaned_sender}]: {transcription}")
             prompt_text = f"[Mensagem de Áudio Transcrita]: {transcription}"
@@ -127,17 +127,17 @@ async def process_whatsapp_audio(sender_number: str, payload_data: dict, mimetyp
 
         add_message(cleaned_sender, "model", ai_response)
 
-        # 4. Envia resposta em ÁUDIO DE VOZ (se disponível)
-        try:
-            await send_audio_message(cleaned_sender, ai_response)
-        except Exception as audio_err:
-            print(f"⚠️ [Audio Send Warning]: {audio_err}")
-
-        # 5. Envia resposta em TEXTO no WhatsApp
+        # 4. Envia resposta em TEXTO IMEDIATAMENTE (sem esperar geração de áudio)
         await send_text_message(cleaned_sender, ai_response)
 
         if message_key:
             await send_reaction(message_key, "✅")
+
+        # 5. Opcional: Tentativa de áudio em background sem travar a entrega
+        try:
+            await send_audio_message(cleaned_sender, ai_response)
+        except Exception as audio_err:
+            print(f"⚠️ [Audio Send Warning]: {audio_err}")
 
     except Exception as e:
         print(f"❌ [Audio Task Error]: {e}")
