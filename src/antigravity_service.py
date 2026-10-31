@@ -32,7 +32,7 @@ HELP_MESSAGE = (
     "• `Estacione: [ideia]` — Grava ideia no Trilho sem perder o foco\n"
     "• `/gasto [valor] [categoria] [descrição]` — Lança despesa em `Gastos_Pessoais.md`\n"
     "• `/cofre [termo]` — Busca ou lê notas no Cofre (`index`, `iag`, `gastos`, `saude`, `tarefas`)\n"
-    "• `/emails [agromarkers|pessoal]` — Lista e-mails recentes da AURA (Agromarkers / Pessoal)\n"
+    "• `/emails [agromarkers|pessoal|icloud]` — Lista e-mails recentes da AURA\n"
     "• `/novo` ou `/reset` — Reinicia sessão e limpa memória recente\n\n"
     "🎛️ *Controle de Voz e Motor:*\n"
     "• `/voz auto` — Áudio só quando você envia áudio ou pede (Padrão)\n"
@@ -187,6 +187,8 @@ def handle_instant_command(phone_number: str, prompt: str) -> str | None:
             "pessoal": "gmail_pessoal",
             "junior": "gmail_pessoal",
             "icloud": "icloud_pessoal",
+            "apple": "icloud_pessoal",
+            "me": "icloud_pessoal",
         }
         target_acc = account_map.get(arg, "gmail_agromarkers")
         return consultar_emails_aura(conta=target_acc, limite=4)
