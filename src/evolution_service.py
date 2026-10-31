@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import json
 from src.config import settings
@@ -72,13 +73,14 @@ async def fetch_media_base64(payload_or_key: dict) -> str | None:
         print(f"❌ [Evolution Media Exception]: {e}")
     return None
 
-async def send_audio_message(phone_number: str, text: str) -> bool:
+async def send_audio_message(phone_number: str, text: str, voice: str = "pt-BR-FranciscaNeural") -> bool:
     """
-    Converte texto em áudio via gTTS e envia como mensagem de voz no WhatsApp via Evolution API.
+    Converte texto em áudio via Edge-TTS (Vozes Neurais Microsoft) e envia como mensagem de voz no WhatsApp.
+    Voz padrão: pt-BR-FranciscaNeural (Feminina expressiva)
     """
     import re
-    from io import BytesIO
     import base64
+    import edge_tts
 
     cleaned_number = "".join(filter(str.isdigit, phone_number))
     url = f"{settings.EVOLUTION_URL}/message/sendWhatsAppAudio/{settings.EVOLUTION_INSTANCE}"
@@ -88,25 +90,27 @@ async def send_audio_message(phone_number: str, text: str) -> bool:
         "Content-Type": "application/json"
     }
 
-    def _generate_tts_base64(raw_text: str) -> str:
-        from gtts import gTTS
-        # Limpa links markdown [texto](url) -> texto
-        clean = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', raw_text)
-        # Limpa formatação markdown (*, _, #, `, ~, >, -)
-        clean = re.sub(r'[*_#`~>|-]', ' ', clean)
-        clean = re.sub(r'\s+', ' ', clean).strip()
-        # Limita para os primeiros 800 caracteres para fala concisa
-        if len(clean) > 800:
-            clean = clean[:800] + "..."
+    # Limpeza refinada de Markdown para fala natural
+    clean = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    clean = re.sub(r'[*_#`~>|-]', ' ', clean)
+    clean = re.sub(r'https?://\S+', '', clean)
+    clean = re.sub(r'\s+', ' ', clean).strip()
 
-        tts = gTTS(text=clean, lang='pt', tld='com.br')
-        mp3_fp = BytesIO()
-        tts.write_to_fp(mp3_fp)
-        mp3_fp.seek(0)
-        return base64.b64encode(mp3_fp.read()).decode('utf-8')
+    if len(clean) > 1200:
+        clean = clean[:1200] + "..."
 
     try:
-        audio_base64 = await asyncio.to_thread(_generate_tts_base64, text)
+        communicate = edge_tts.Communicate(clean, voice)
+        audio_data = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data += chunk["data"]
+
+        if not audio_data:
+            print("⚠️ [Edge-TTS] Nenhum dado de áudio retornado.")
+            return False
+
+        audio_base64 = base64.b64encode(audio_data).decode("utf-8")
 
         payload = {
             "number": cleaned_number,
@@ -121,7 +125,7 @@ async def send_audio_message(phone_number: str, text: str) -> bool:
                 msg_id = res_data.get("key", {}).get("id")
                 if msg_id:
                     register_bot_message_id(msg_id)
-                print(f"🎙️ [Evolution API] Áudio de resposta enviado com sucesso para {cleaned_number} (ID: {msg_id})")
+                print(f"🎙️ [Evolution API] Áudio Edge-TTS ({voice}) enviado com sucesso para {cleaned_number} (ID: {msg_id})")
                 return True
             else:
                 print(f"❌ [Evolution Audio Error] Status {resp.status_code}: {resp.text}")
