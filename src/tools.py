@@ -355,6 +355,58 @@ def consultar_cofre_notas(atalho_ou_termo: str = "INDEX.md") -> str:
         return "\n\n---\n\n".join(matches[:4])
     return f"Nenhuma nota encontrada no Cofre para '{atalho_ou_termo}'."
 
+def consultar_emails_aura(conta: str = "gmail_agromarkers", termo_busca: str = "", limite: int = 5) -> str:
+    """
+    Consulta ou busca e-mails recentes nas caixas de correio da AURA (IMAP).
+    
+    Args:
+        conta: Identificador da conta:
+               'gmail_agromarkers' (contato@agromarkers.com.br - Instituto Agro Genética/IAG),
+               'gmail_pessoal' (junior31maio@gmail.com),
+               'icloud_pessoal' (jsoj@me.com).
+        termo_busca: Palavra-chave opcional para filtrar remetente ou assunto (ex: 'BASF', 'Laudo', 'Nota', 'Fatura'). Se vazio, lista os últimos recebidos.
+        limite: Quantidade máxima de mensagens para retornar (padrão 5).
+    """
+    import sys
+    sys.path.append("/root/context/scripts")
+    try:
+        from aura_email_engine import list_or_search_emails
+        res = list_or_search_emails(account_key=conta, query=termo_busca if termo_busca.strip() else None, limit=limite)
+        if not res:
+            return f"📭 Nenhum e-mail encontrado na conta `{conta}`" + (f" com o termo '{termo_busca}'." if termo_busca else ".")
+        
+        output = [f"📬 *Últimos e-mails ({conta})*:"]
+        for m in res:
+            dt = m.get("date", "").split(" +")[0].split(" -")[0]
+            output.append(
+                f"• *Assunto:* {m.get('subject')}\n"
+                f"  *De:* {m.get('from')}\n"
+                f"  *Data:* {dt}\n"
+                f"  *Prévia:* {m.get('snippet', '')[:180].replace(chr(10), ' ')}...\n"
+            )
+        return "\n".join(output)
+    except Exception as e:
+        return f"Erro ao consultar e-mails da AURA ({conta}): {e}"
+
+def enviar_email_aura(conta: str = "gmail_agromarkers", para: str = "", assunto: str = "", corpo: str = "") -> str:
+    """
+    Envia um e-mail através da conta oficial da AURA (SMTP autenticado).
+    
+    Args:
+        conta: 'gmail_agromarkers' (contato@agromarkers.com.br) ou 'gmail_pessoal' (junior31maio@gmail.com).
+        para: Endereço de e-mail do destinatário.
+        assunto: Assunto do e-mail.
+        corpo: Texto do corpo do e-mail.
+    """
+    import sys
+    sys.path.append("/root/context/scripts")
+    try:
+        from aura_email_engine import send_email_message
+        res = send_email_message(account_key=conta, to_addr=para, subject=assunto, body=corpo)
+        return f"✅ E-mail enviado com sucesso de `{res.get('from')}` para `{para}`! (Assunto: '{assunto}')"
+    except Exception as e:
+        return f"Erro ao enviar e-mail via AURA ({conta}): {e}"
+
 # Mapeamento completo de ferramentas executáveis autonomamente pelo Gemini
 AVAILABLE_TOOLS = [
     send_email,
@@ -368,4 +420,6 @@ AVAILABLE_TOOLS = [
     registrar_gasto_pessoal,
     estacionar_ideia_trilho,
     consultar_cofre_notas,
+    consultar_emails_aura,
+    enviar_email_aura,
 ]

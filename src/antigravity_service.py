@@ -32,6 +32,7 @@ HELP_MESSAGE = (
     "• `Estacione: [ideia]` — Grava ideia no Trilho sem perder o foco\n"
     "• `/gasto [valor] [categoria] [descrição]` — Lança despesa em `Gastos_Pessoais.md`\n"
     "• `/cofre [termo]` — Busca ou lê notas no Cofre (`index`, `iag`, `gastos`, `saude`, `tarefas`)\n"
+    "• `/emails [agromarkers|pessoal]` — Lista e-mails recentes da AURA (Agromarkers / Pessoal)\n"
     "• `/novo` ou `/reset` — Reinicia sessão e limpa memória recente\n\n"
     "🎛️ *Controle de Voz e Motor:*\n"
     "• `/voz auto` — Áudio só quando você envia áudio ou pede (Padrão)\n"
@@ -174,6 +175,21 @@ def handle_instant_command(phone_number: str, prompt: str) -> str | None:
             f"⚙️ *Motor atual:* `{prefs['engine_mode']}`\n"
             "Use `/modo fast` (~2s) ou `/modo agy` (~25s)."
         )
+
+    # 10. Consulta rápida a e-mails ("/emails [agromarkers|pessoal]" ou "/email")
+    if lower == "/emails" or lower == "/email" or lower.startswith("/emails ") or lower.startswith("/email "):
+        from src.tools import consultar_emails_aura
+        arg = clean.split(maxsplit=1)[1].lower() if " " in clean else "agromarkers"
+        account_map = {
+            "agromarkers": "gmail_agromarkers",
+            "agro": "gmail_agromarkers",
+            "iag": "gmail_agromarkers",
+            "pessoal": "gmail_pessoal",
+            "junior": "gmail_pessoal",
+            "icloud": "icloud_pessoal",
+        }
+        target_acc = account_map.get(arg, "gmail_agromarkers")
+        return consultar_emails_aura(conta=target_acc, limite=4)
 
     return None
 
