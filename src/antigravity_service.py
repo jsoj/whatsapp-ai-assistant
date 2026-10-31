@@ -195,7 +195,12 @@ def handle_instant_command(phone_number: str, prompt: str) -> str | None:
 
     return None
 
-async def route_and_execute(phone_number: str, prompt: str, history: list[dict] = None) -> str:
+async def route_and_execute(
+    phone_number: str,
+    prompt: str,
+    history: list[dict] = None,
+    custom_system_instruction: str = None
+) -> str:
     """
     Roteador Inteligente Híbrido:
     1. Comandos Instantâneos (<0.1s)
@@ -226,7 +231,13 @@ async def route_and_execute(phone_number: str, prompt: str, history: list[dict] 
     # 4. Rota Rápida Padrão (Fast-Path: Gemini 2.5 Flash + Tools + Memória em ~1.5-2.5s)
     start_t = time.time()
     print(f"🚀 [Fast-Path] Processando mensagem para {phone_number} via Gemini 2.5 Flash + Tools...")
-    response = await asyncio.to_thread(generate_ai_response, phone_number, clean, history or [])
+    response = await asyncio.to_thread(
+        generate_ai_response,
+        phone_number,
+        clean,
+        history or [],
+        custom_system_instruction
+    )
     print(f"⚡ [Fast-Path Finished] Concluído em {time.time() - start_t:.2f}s")
     return response
 

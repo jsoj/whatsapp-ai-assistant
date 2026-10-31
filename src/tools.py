@@ -212,7 +212,8 @@ def registrar_gasto_pessoal(
     categoria: str,
     descricao: str,
     forma_pagamento: str = "PIX",
-    data: str = ""
+    data: str = "",
+    tag: str = ""
 ) -> str:
     """
     Registra fisicamente um gasto pessoal na tabela de Gastos_Pessoais.md dentro do Cofre (VPS2/notes).
@@ -223,16 +224,19 @@ def registrar_gasto_pessoal(
         descricao: Descrição detalhada da despesa.
         forma_pagamento: Forma de pagamento utilizada (ex: 'PIX', 'Cartão de Crédito', 'Débito', 'Dinheiro').
         data: Data no formato AAAA-MM-DD (se vazio, usa a data atual).
+        tag: Tag identificadora de origem (ex: '[Grupo Casal]').
     """
     from datetime import datetime
     date_str = data.strip() if data and data.strip() else datetime.now().strftime("%Y-%m-%d")
     gastos_path = Path("/home/jsoj/VPS2/notes/03_Pessoal/Gastos_Pessoais.md")
+    clean_tag = tag.strip()
+    full_desc = f"{clean_tag} {descricao.strip()}".strip() if clean_tag and not descricao.strip().startswith(clean_tag) else descricao.strip()
     try:
         if not gastos_path.exists():
             return f"Erro: Arquivo do Cofre não encontrado em {gastos_path}"
 
         content = gastos_path.read_text(encoding="utf-8")
-        new_row = f"| {date_str} | {categoria.strip()} | {descricao.strip()} | {float(valor):.2f} | {forma_pagamento.strip()} |"
+        new_row = f"| {date_str} | {categoria.strip()} | {full_desc} | {float(valor):.2f} | {forma_pagamento.strip()} |"
 
         lines = content.splitlines()
         insert_idx = len(lines)
@@ -242,9 +246,166 @@ def registrar_gasto_pessoal(
 
         lines.insert(insert_idx, new_row)
         gastos_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return f"✅ *Gasto registrado no Cofre (`Gastos_Pessoais.md`):*\n`{new_row}`"
+        return (
+            f"✅ *Despesa registrada no Cofre (`Gastos_Pessoais.md`):*\n"
+            f"• *Data:* {date_str}\n"
+            f"• *Valor:* R$ {float(valor):.2f}\n"
+            f"• *Categoria:* {categoria.strip()}\n"
+            f"• *Descrição:* {full_desc}\n"
+            f"• *Forma de Pagamento:* {forma_pagamento.strip()}"
+        )
     except Exception as e:
         return f"Erro ao registrar gasto no Cofre: {e}"
+
+def gerar_relatorio_gastos(mes: str = "", tag: str = "") -> str:
+    """
+    Gera um relatório e gráfico consolidado das despesas em Gastos_Pessoais.md com totais por categoria.
+    
+    Args:
+        mes: Filtro de mês no formato AAAA-MM (ex: '2026-10'). Se vazio, considera todas as despesas ou o mês corrente.
+        tag: Filtro opcional por tag (ex: '[Grupo Casal]').
+    """
+    gastos_path = Path("/home/jsoj/VPS2/notes/03_Pessoal/Gastos_Pessoais.md")
+    if not gastos_path.exists():
+        return "Erro: Gastos_Pessoais.md não encontrado."
+    
+    lines = gastos_path.read_text(encoding="utf-8").splitlines()
+    rows = []
+    for line in lines:
+        if line.startswith("|") and not ("Data" in line or ":---" in line or "Categoria" in line):
+            parts = [p.strip() for p in line.split("|")[1:-1]]
+            if len(parts) >= 4:
+                try:
+                    val = float(parts[3])
+                    rows.append({
+                        "data": parts[0],
+                        "categoria": parts[1],
+                        "descricao": parts[2],
+                        "valor": val,
+                        "pagamento": parts[4] if len(parts) > 4 else "PIX"
+                    })
+                except ValueError:
+                    continue
+    
+    filtered = rows
+    if mes:
+        filtered = [r for r in filtered if r["data"].startswith(mes)]
+    if tag:
+        filtered = [r for r in filtered if tag.lower() in r["descricao"].lower()]
+
+    if not filtered:
+        return f"📊 Nenhum gasto registrado para o filtro (Mês: {mes or 'todos'}, Tag: {tag or 'todas'})."
+
+    total = sum(r["valor"] for r in filtered)
+    by_cat = {}
+    for r in filtered:
+        by_cat[r["categoria"]] = by_cat.get(r["categoria"], 0.0) + r["valor"]
+
+    sorted_cats = sorted(by_cat.items(), key=lambda x: x[1], reverse=True)
+    report = [f"📊 *Relatório de Gastos — {mes or 'Geral'}*"]
+    if tag:
+        report.append(f"🏷️ *Origem:* `{tag}`")
+    report.append(f"💰 *Total Acumulado:* R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    report.append("\n📈 *Distribuição por Categoria:*")
+
+    for cat, val in sorted_cats:
+        pct = (val / total) * 100 if total > 0 else 0
+        bars_count = int(pct / 10)
+        bar = "█" * bars_count + "░" * (10 - bars_count)
+        val_str = f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        report.append(f"• *{cat}*: {val_str} ({pct:.1f}%)\n  `[{bar}]`")
+
+    return "\n".join(report)
+
+def gerenciar_agenda_e_casa(
+    acao: str,
+    item_ou_evento: str = "",
+    quem: str = "",
+    data: str = "",
+    horario: str = "",
+    detalhes: str = ""
+) -> str:
+    """
+    Gerencia a agenda de compromissos familiares, lista de compras e manutenções no Cofre (Agenda_e_Compras.md).
+    
+    Args:
+        acao: 'adicionar_evento', 'listar_agenda', 'adicionar_compra', 'listar_compras', 'adicionar_manutencao', 'listar_manutencao'.
+        item_ou_evento: Nome do evento/compromisso, item de compra ou reparo.
+        quem: Pessoa envolvida (ex: 'Sophia', 'Julia', 'Sibele', 'Junior', 'Família').
+        data: Data no formato AAAA-MM-DD. Se vazio, usa data atual.
+        horario: Horário do compromisso (ex: '14:30', '19:00').
+        detalhes: Local, observações ou notas adicionais.
+    """
+    from datetime import datetime
+    agenda_path = Path("/home/jsoj/VPS2/notes/04_Vida_Familiar_e_Casa/Agenda_e_Compras.md")
+    if not agenda_path.exists():
+        return "Erro: Arquivo Agenda_e_Compras.md não encontrado."
+    
+    content = agenda_path.read_text(encoding="utf-8")
+    date_str = data.strip() if data and data.strip() else datetime.now().strftime("%Y-%m-%d")
+    
+    if acao == "adicionar_evento":
+        row = f"| {date_str} | {horario.strip() or 'A definir'} | {item_ou_evento.strip()} | {quem.strip() or 'Família'} | {detalhes.strip()} |"
+        lines = content.splitlines()
+        idx = len(lines)
+        for i, l in enumerate(lines):
+            if "Agenda de Compromissos" in l:
+                idx = i + 3
+                break
+        lines.insert(idx, row)
+        agenda_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return f"📅 *Compromisso registrado na Agenda da Família!*\n• *Data:* {date_str} às {horario or 'horário a combinar'}\n• *Evento:* {item_ou_evento}\n• *Quem:* {quem or 'Família'}\n• *Local/Notas:* {detalhes or '-'}"
+
+    elif acao == "listar_agenda":
+        lines = content.splitlines()
+        events = [l for l in lines if l.startswith("|") and not ("Data" in l or ":---" in l or "Item" in l)]
+        if not events:
+            return "📅 Nenhum compromisso agendado no momento."
+        return "📅 *Próximos Compromissos da Família:*\n" + "\n".join(events[:8])
+
+    elif acao == "adicionar_compra":
+        row = f"| {item_ou_evento.strip()} | {detalhes.strip() or 'Geral'} | {quem.strip() or 'Família'} | Pendente |"
+        lines = content.splitlines()
+        idx = len(lines)
+        for i, l in enumerate(lines):
+            if "Lista de Compras" in l:
+                idx = i + 3
+                break
+        lines.insert(idx, row)
+        agenda_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return f"🛒 *Item adicionado à lista de compras:* `{item_ou_evento}` ({detalhes or 'Geral'})\nSolicitado por: {quem or 'Família'}"
+
+    elif acao == "listar_compras":
+        lines = content.splitlines()
+        in_compras = False
+        items = []
+        for l in lines:
+            if "Lista de Compras" in l:
+                in_compras = True
+                continue
+            if in_compras:
+                if l.startswith("## ") or l.startswith("---"):
+                    if items:
+                        break
+                elif l.startswith("|") and not ("Item" in l or ":---" in l):
+                    items.append(l)
+        if not items:
+            return "🛒 A lista de compras está vazia no momento!"
+        return "🛒 *Lista de Compras Pendentes:*\n" + "\n".join(items)
+
+    elif acao == "adicionar_manutencao":
+        row = f"| {item_ou_evento.strip()} | {detalhes.strip() or 'Casa'} | {quem.strip() or 'Família'} | Pendente |"
+        lines = content.splitlines()
+        idx = len(lines)
+        for i, l in enumerate(lines):
+            if "Manutenção Residencial" in l:
+                idx = i + 3
+                break
+        lines.insert(idx, row)
+        agenda_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return f"🛠️ *Tarefa de manutenção anotada:* `{item_ou_evento}` ({detalhes or 'Casa'})"
+
+    return f"Ação '{acao}' não reconhecida."
 
 def estacionar_ideia_trilho(
     ideia: str,
@@ -418,6 +579,8 @@ AVAILABLE_TOOLS = [
     get_system_status,
     query_git_repository,
     registrar_gasto_pessoal,
+    gerar_relatorio_gastos,
+    gerenciar_agenda_e_casa,
     estacionar_ideia_trilho,
     consultar_cofre_notas,
     consultar_emails_aura,

@@ -37,13 +37,18 @@ def _build_chat_history(history: list[dict] | None) -> list[types.Content]:
             )
     return formatted
 
-def generate_ai_response(phone_number: str, user_text: str, history: list[dict] = None) -> str:
+def generate_ai_response(
+    phone_number: str,
+    user_text: str,
+    history: list[dict] = None,
+    custom_system_instruction: str = None
+) -> str:
     """
     Gera uma resposta rápida (~1.5s-2.5s) com suporte a Function Calling autônomo,
     histórico de conversa e Fallback automático de modelos.
     """
     client = get_client()
-    system_instruction = load_agents_context()
+    system_instruction = custom_system_instruction or load_agents_context()
     primary_model = settings.GEMINI_MODEL or "gemini-2.5-flash"
     if primary_model == "gemini-3.6-flash":
         primary_model = "gemini-2.5-flash"
@@ -142,14 +147,16 @@ def generate_ai_response_from_media(
     mime_type: str,
     caption: str = "",
     file_name: str = "",
-    history: list[dict] = None
+    history: list[dict] = None,
+    custom_system_instruction: str = None,
+    default_tag: str = ""
 ) -> str:
     """
     Processa imagens (comprovantes, recibos, prints, fotos) e documentos (PDF, TXT, CSV)
     com Gemini 2.5 Flash Multimodal e acesso às ferramentas do Cofre e VPS.
     """
     client = get_client()
-    system_instruction = load_agents_context()
+    system_instruction = custom_system_instruction or load_agents_context()
     raw_bytes = base64.b64decode(media_base64)
     clean_mime = (mime_type or "image/jpeg").split(";")[0].strip()
 
@@ -158,18 +165,20 @@ def generate_ai_response_from_media(
         mime_type=clean_mime
     )
 
+    tag_instruction = f" IMPORTANTE: Ao registrar gasto no Cofre, passe sempre o parâmetro tag='{default_tag}'." if default_tag else ""
+
     if caption and caption.strip():
         prompt = (
             f"O usuário enviou este arquivo/imagem ({file_name or clean_mime}) com a seguinte instrução: '{caption.strip()}'.\n"
             "Analise o conteúdo visual/textual com precisão, execute as ferramentas necessárias "
             "(como registrar_gasto_pessoal se for um comprovante/recibo solicitado, ou atualizar notas no Cofre) "
-            "e responda de forma estruturada e objetiva no WhatsApp."
+            f"e responda de forma estruturada e objetiva no WhatsApp.{tag_instruction}"
         )
     else:
         prompt = (
             f"O usuário enviou este arquivo/imagem ({file_name or clean_mime}) sem legenda.\n"
-            "1. Analise detalhadamente o conteúdo (se for comprovante PIX/boleto/nota fiscal/recibo, extraia Data, Beneficiário, Categoria sugerida, Valor e Forma de Pagamento).\n"
-            "2. Se for um print técnico, documento PDF ou foto de laboratório/sementes, faça um resumo executivo claro dos dados extraídos e pergunte se deseja registrar no Cofre (`VPS2/notes`)."
+            "1. Analise detalhadamente o conteúdo (se for comprovante PIX/boleto/nota fiscal/recibo, extraia Data, Beneficiário, Categoria sugerida, Valor e Forma de Pagamento e lance usando registrar_gasto_pessoal).\n"
+            f"2. Confirme o que foi lançado de forma clara e amigável.{tag_instruction}"
         )
 
     formatted_history = _build_chat_history(history)

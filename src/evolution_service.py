@@ -4,11 +4,20 @@ import json
 from src.config import settings
 from src.bot_state import register_bot_message_id
 
+def format_recipient(phone_or_jid: str) -> str:
+    """Higieniza o destinatário: mantém sufixo @g.us se for grupo ou extrai apenas dígitos se for número individual."""
+    s = str(phone_or_jid).strip()
+    if "@g.us" in s:
+        digits = "".join(filter(str.isdigit, s.split("@")[0]))
+        return f"{digits}@g.us"
+    return "".join(filter(str.isdigit, s))
+
 async def send_text_message(phone_number: str, text: str) -> bool:
     """
     Envia uma mensagem de texto pelo WhatsApp através da Evolution API.
+    Suporta tanto números individuais quanto grupos (@g.us).
     """
-    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    target = format_recipient(phone_number)
     url = f"{settings.EVOLUTION_URL}/message/sendText/{settings.EVOLUTION_INSTANCE}"
     
     headers = {
@@ -17,7 +26,7 @@ async def send_text_message(phone_number: str, text: str) -> bool:
     }
 
     payload = {
-        "number": cleaned_number,
+        "number": target,
         "text": text
     }
 
@@ -82,7 +91,7 @@ async def send_audio_message(phone_number: str, text: str, voice: str = "pt-BR-F
     import base64
     import edge_tts
 
-    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    target = format_recipient(phone_number)
     url = f"{settings.EVOLUTION_URL}/message/sendWhatsAppAudio/{settings.EVOLUTION_INSTANCE}"
     
     headers = {
@@ -113,7 +122,7 @@ async def send_audio_message(phone_number: str, text: str, voice: str = "pt-BR-F
         audio_base64 = base64.b64encode(audio_data).decode("utf-8")
 
         payload = {
-            "number": cleaned_number,
+            "number": target,
             "audio": audio_base64,
             "encoding": True
         }
@@ -125,7 +134,7 @@ async def send_audio_message(phone_number: str, text: str, voice: str = "pt-BR-F
                 msg_id = res_data.get("key", {}).get("id")
                 if msg_id:
                     register_bot_message_id(msg_id)
-                print(f"🎙️ [Evolution API] Áudio Edge-TTS ({voice}) enviado com sucesso para {cleaned_number} (ID: {msg_id})")
+                print(f"🎙️ [Evolution API] Áudio Edge-TTS ({voice}) enviado com sucesso para {target} (ID: {msg_id})")
                 return True
             else:
                 print(f"❌ [Evolution Audio Error] Status {resp.status_code}: {resp.text}")
@@ -138,7 +147,7 @@ async def send_presence(phone_number: str, presence: str = "composing") -> bool:
     """
     Envia indicador de presença ('composing' ou 'recording') no chat do WhatsApp.
     """
-    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    target = format_recipient(phone_number)
     url = f"{settings.EVOLUTION_URL}/chat/sendPresence/{settings.EVOLUTION_INSTANCE}"
     
     headers = {
@@ -147,7 +156,7 @@ async def send_presence(phone_number: str, presence: str = "composing") -> bool:
     }
 
     payload = {
-        "number": cleaned_number,
+        "number": target,
         "presence": presence,
         "delay": 1200
     }
