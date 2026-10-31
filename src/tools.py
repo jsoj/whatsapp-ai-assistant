@@ -191,7 +191,7 @@ def get_system_status() -> str:
     except Exception as e:
         return f"Erro ao obter status do sistema: {e}"
 
-def query_git_repository(repo_path: str = "/home/jsoj/dev/whatsapp-ai-assistant", command: str = "status") -> str:
+def query_git_repository(repo_path: str = "/root/whatsapp-ai-assistant", command: str = "status") -> str:
     """
     Consulta ou executa comandos git em um repositório do projeto.
     
@@ -207,6 +207,154 @@ def query_git_repository(repo_path: str = "/home/jsoj/dev/whatsapp-ai-assistant"
     except Exception as e:
         return f"Erro ao executar git '{command}' em '{repo_path}': {e}"
 
+def registrar_gasto_pessoal(
+    valor: float,
+    categoria: str,
+    descricao: str,
+    forma_pagamento: str = "PIX",
+    data: str = ""
+) -> str:
+    """
+    Registra fisicamente um gasto pessoal na tabela de Gastos_Pessoais.md dentro do Cofre (VPS2/notes).
+    
+    Args:
+        valor: Valor numérico do gasto em Reais (ex: 85.50).
+        categoria: Categoria do gasto (ex: 'Refeição', 'Carro', 'Moradia / Casa', 'Saúde', 'Educação', 'Outros').
+        descricao: Descrição detalhada da despesa.
+        forma_pagamento: Forma de pagamento utilizada (ex: 'PIX', 'Cartão de Crédito', 'Débito', 'Dinheiro').
+        data: Data no formato AAAA-MM-DD (se vazio, usa a data atual).
+    """
+    from datetime import datetime
+    date_str = data.strip() if data and data.strip() else datetime.now().strftime("%Y-%m-%d")
+    gastos_path = Path("/home/jsoj/VPS2/notes/03_Pessoal/Gastos_Pessoais.md")
+    try:
+        if not gastos_path.exists():
+            return f"Erro: Arquivo do Cofre não encontrado em {gastos_path}"
+
+        content = gastos_path.read_text(encoding="utf-8")
+        new_row = f"| {date_str} | {categoria.strip()} | {descricao.strip()} | {float(valor):.2f} | {forma_pagamento.strip()} |"
+
+        lines = content.splitlines()
+        insert_idx = len(lines)
+        for i, line in enumerate(lines):
+            if line.strip().startswith("|") and ("Data" in line or ":---" in line or "202" in line):
+                insert_idx = i + 1
+
+        lines.insert(insert_idx, new_row)
+        gastos_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return f"✅ *Gasto registrado no Cofre (`Gastos_Pessoais.md`):*\n`{new_row}`"
+    except Exception as e:
+        return f"Erro ao registrar gasto no Cofre: {e}"
+
+def estacionar_ideia_trilho(
+    ideia: str,
+    contexto: str = "Geral",
+    onde_executar: str = "VPS / Notebook",
+    prioridade: str = "Média"
+) -> str:
+    """
+    Estaciona uma ideia ou tarefa paralela no Parking Lot (Estacionamento de Digressões)
+    dos arquivos FOCUS.md e TRILHO_FOCO.md para não perder o foco da Missão Ativa.
+    
+    Args:
+        ideia: A ideia, lembrete ou tarefa a ser estacionada.
+        contexto: Cartucho ou área (ex: 'contexto-laboratorio', 'contexto-pessoal', 'contexto-produtiva', 'Infra VPS').
+        onde_executar: Ambiente alvo (ex: 'VPS Hostinger', 'Notebook Arch Linux', 'Notebook Windows').
+        prioridade: Nível de prioridade ('Alta', 'Média', 'Baixa').
+    """
+    import re
+    targets = [
+        Path("/root/context/FOCUS.md"),
+        Path("/home/jsoj/VPS2/notes/05_Atividades_e_Rotina/TRILHO_FOCO.md")
+    ]
+    updated_files = []
+    clean_idea = ideia.strip().replace("|", "-")
+
+    for path in targets:
+        if not path.exists():
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+            lines = content.splitlines()
+            in_parking = False
+            last_table_idx = -1
+            max_num = 0
+
+            for i, line in enumerate(lines):
+                if "ESTACIONAMENTO DE DIGRESSÕES" in line:
+                    in_parking = True
+                    continue
+                if in_parking:
+                    if line.strip().startswith("|"):
+                        last_table_idx = i
+                        m = re.match(r"^\|\s*\*?\*?(\d+)\*?\*?\s*\|", line.strip())
+                        if m:
+                            max_num = max(max_num, int(m.group(1)))
+                    elif last_table_idx != -1 and line.strip().startswith("---"):
+                        break
+
+            next_num = max_num + 1
+            new_row = f"| **{next_num}** | `{contexto.strip()}` | {clean_idea} | {onde_executar.strip()} | {prioridade.strip()} |"
+            if last_table_idx != -1:
+                lines.insert(last_table_idx + 1, new_row)
+            else:
+                lines.append(new_row)
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            updated_files.append(path.name)
+        except Exception as e:
+            print(f"⚠️ Erro ao atualizar {path}: {e}")
+
+    if updated_files:
+        return (
+            f"🅿️ *Ideia estacionada com sucesso!* ({', '.join(updated_files)})\n"
+            f"• *Item #{next_num}:* {clean_idea}\n"
+            f"• *Contexto:* `{contexto}` | *Prioridade:* {prioridade}\n\n"
+            f"🛤️ _Foco mantido na Missão Única Ativa._"
+        )
+    return "⚠️ Não foi possível localizar os arquivos do Trilho de Foco."
+
+def consultar_cofre_notas(atalho_ou_termo: str = "INDEX.md") -> str:
+    """
+    Lê notas rápidas ou busca por um termo nos arquivos Markdown do Cofre (VPS2/notes).
+    
+    Args:
+        atalho_ou_termo: Nome do atalho ('index', 'foco', 'trilho', 'gastos', 'financeiro_iag', 'saude', 'tarefas')
+                         ou caminho/termo para buscar dentro de /home/jsoj/VPS2/notes.
+    """
+    notes_root = Path("/home/jsoj/VPS2/notes")
+    shortcuts = {
+        "index": notes_root / "INDEX.md",
+        "index.md": notes_root / "INDEX.md",
+        "foco": Path("/root/context/FOCUS.md"),
+        "trilho": notes_root / "05_Atividades_e_Rotina/TRILHO_FOCO.md",
+        "gastos": notes_root / "03_Pessoal/Gastos_Pessoais.md",
+        "financeiro_iag": notes_root / "01_Profissional/IAG_Instituto_Agro_Genetica/Financeiro_IAG.md",
+        "iag": notes_root / "01_Profissional/IAG_Instituto_Agro_Genetica/Financeiro_IAG.md",
+        "saude": notes_root / "03_Pessoal/Saude.md",
+        "tarefas": notes_root / "05_Atividades_e_Rotina/Atividades_e_Tarefas.md",
+    }
+    key = atalho_ou_termo.strip().lower()
+    if key in shortcuts and shortcuts[key].exists():
+        return shortcuts[key].read_text(encoding="utf-8", errors="replace")[:8000]
+
+    candidate = notes_root / atalho_ou_termo.strip().lstrip("/")
+    if candidate.exists() and candidate.is_file():
+        return candidate.read_text(encoding="utf-8", errors="replace")[:8000]
+
+    # Busca por nome ou conteúdo nos arquivos .md do Cofre
+    matches = []
+    for md_file in notes_root.rglob("*.md"):
+        try:
+            text = md_file.read_text(encoding="utf-8", errors="replace")
+            if key in md_file.name.lower() or key in text.lower():
+                rel = md_file.relative_to(notes_root)
+                matches.append(f"📄 *{rel}*:\n{text[:1500]}")
+        except Exception:
+            continue
+    if matches:
+        return "\n\n---\n\n".join(matches[:4])
+    return f"Nenhuma nota encontrada no Cofre para '{atalho_ou_termo}'."
+
 # Mapeamento completo de ferramentas executáveis autonomamente pelo Gemini
 AVAILABLE_TOOLS = [
     send_email,
@@ -216,5 +364,8 @@ AVAILABLE_TOOLS = [
     manage_coolify,
     check_domain_dns,
     get_system_status,
-    query_git_repository
+    query_git_repository,
+    registrar_gasto_pessoal,
+    estacionar_ideia_trilho,
+    consultar_cofre_notas,
 ]

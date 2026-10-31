@@ -41,6 +41,14 @@ def init_db(db_path: str = None):
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            phone_number TEXT PRIMARY KEY,
+            voice_mode TEXT NOT NULL DEFAULT 'auto',
+            engine_mode TEXT NOT NULL DEFAULT 'fast',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -123,4 +131,44 @@ def reset_agy_session(phone_number: str, db_path: str = None):
     cursor.execute("DELETE FROM agy_sessions WHERE phone_number = ?", (cleaned_number,))
     conn.commit()
     conn.close()
+
+def get_user_prefs(phone_number: str, db_path: str = None) -> dict:
+    """Retorna preferências do usuário (voice_mode: 'auto'|'on'|'off', engine_mode: 'fast'|'agy')."""
+    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT voice_mode, engine_mode FROM user_preferences WHERE phone_number = ?",
+        (cleaned_number,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {"voice_mode": row["voice_mode"], "engine_mode": row["engine_mode"]}
+    return {"voice_mode": "auto", "engine_mode": "fast"}
+
+def set_user_prefs(phone_number: str, voice_mode: str = None, engine_mode: str = None, db_path: str = None) -> dict:
+    """Atualiza as preferências de voz ou motor para o usuário."""
+    cleaned_number = "".join(filter(str.isdigit, phone_number))
+    current = get_user_prefs(cleaned_number, db_path)
+    new_voice = voice_mode if voice_mode in ("auto", "on", "off") else current["voice_mode"]
+    new_engine = engine_mode if engine_mode in ("fast", "agy") else current["engine_mode"]
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO user_preferences (phone_number, voice_mode, engine_mode, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(phone_number) DO UPDATE SET
+            voice_mode = excluded.voice_mode,
+            engine_mode = excluded.engine_mode,
+            updated_at = excluded.updated_at
+        """,
+        (cleaned_number, new_voice, new_engine, now)
+    )
+    conn.commit()
+    conn.close()
+    return {"voice_mode": new_voice, "engine_mode": new_engine}
+
 
