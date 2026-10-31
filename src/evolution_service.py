@@ -38,7 +38,7 @@ async def send_text_message(phone_number: str, text: str) -> bool:
                 msg_id = res_data.get("key", {}).get("id")
                 if msg_id:
                     register_bot_message_id(msg_id)
-                print(f"✅ [Evolution API] Mensagem enviada com sucesso para {cleaned_number} (ID: {msg_id})")
+                print(f"✅ [Evolution API] Mensagem enviada com sucesso para {target} (ID: {msg_id})")
                 return True
             else:
                 print(f"❌ [Evolution API Error] Status {resp.status_code}: {resp.text}")
