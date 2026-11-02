@@ -252,12 +252,34 @@ def get_brain_sessions() -> set[str]:
     return {d.name for d in brain_dir.iterdir() if d.is_dir() and len(d.name) == 36}
 
 def clean_agy_output(raw_output: str) -> str:
-    """Limpa avisos do CLI e formata a resposta para o WhatsApp."""
+    """Limpa avisos do CLI e converte eventuais tabelas/títulos markdown para padrão WhatsApp."""
     lines = raw_output.splitlines()
     clean_lines = []
+    in_table = False
+    
     for line in lines:
-        if line.strip().startswith("warning: conversation") or line.strip().startswith("warn:"):
+        stripped = line.strip()
+        if stripped.startswith("warning: conversation") or stripped.startswith("warn:"):
             continue
+            
+        # Converte títulos markdown (#, ##, ###) em negrito com marcador
+        if re.match(r"^#{1,6}\s+", stripped):
+            clean_title = re.sub(r"^#{1,6}\s+", "", stripped)
+            clean_lines.append(f"\n*{clean_title}*")
+            continue
+            
+        # Converte separadores de tabela (|---|---|)
+        if re.match(r"^\|?(\s*:?-+:?\s*\|)+\s*$", stripped):
+            in_table = True
+            continue
+            
+        # Converte linhas de tabela (| A | B | C |) em lista com marcadores
+        if stripped.startswith("|") and stripped.endswith("|"):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if cells:
+                clean_lines.append("• " + " — ".join([c for c in cells if c]))
+            continue
+
         clean_lines.append(line)
     
     result = "\n".join(clean_lines).strip()
