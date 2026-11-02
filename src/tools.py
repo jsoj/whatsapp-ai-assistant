@@ -568,33 +568,49 @@ def enviar_email_aura(conta: str = "gmail_agromarkers", para: str = "", assunto:
     except Exception as e:
         return f"Erro ao enviar e-mail via AURA ({conta}): {e}"
 
-def consultar_omie_iag(modulo: str, filtro: str = "", pagina: int = 1) -> str:
+def consultar_omie_iag(modulo: str, filtro: str = "", pagina: int = 1, solicitante: str = "", chat_origem: str = "") -> str:
     """
     Consulta o ERP Omie do Instituto Agro Genética (IAG).
-    Módulos disponíveis:
-    - 'contas_a_receber': Títulos a receber de clientes, vencimentos, valores e status de pagamento.
-    - 'contas_a_pagar': Títulos a pagar de fornecedores, serviços e compras do laboratório.
-    - 'estoque': Posição e movimentação de estoque de insumos, reagentes e consumíveis do laboratório.
     
-    ATENÇÃO: Saldos de contas correntes e aplicações bancárias NÃO estão disponíveis nesta ferramenta (Regra de Salvaguarda IAG).
+    Regras de Governança & Segurança (RBAC Estrito):
+    - Apenas permitido no chat privado do Junior (Owner) ou dentro do grupo IAG Sócios (120363423519539092@g.us).
+    - Proibido qualquer acesso fora destes dois canais.
+    - Se o usuário for o Junior: Acesso total (módulos permitidos, contas_a_receber, contas_a_pagar, estoque, etc.).
+    - Se for outro usuário no grupo IAG Sócios: Escopo limitado estritamente a 'contas_a_pagar', 'contas_a_receber' e 'estoque'.
+    - SALVAGUARDA CRÍTICA: Saldos bancários e aplicações de contas correntes NUNCA são expostos a terceiros.
     
     Args:
         modulo: 'contas_a_receber', 'contas_a_pagar' ou 'estoque'.
         filtro: Nome do cliente, fornecedor ou produto para filtrar (opcional).
         pagina: Página de registros (padrão 1).
+        solicitante: Telefone/JID de quem fez a pergunta (injetado internamente).
+        chat_origem: JID do grupo ou chat onde foi solicitada a consulta.
     """
+    # Validação de Canal Permitido: Apenas Privado do Junior ou Grupo IAG Sócios
+    is_iag_group = "120363423519539092" in str(chat_origem)
+    is_owner = any(owner in str(solicitante) or str(solicitante) in owner for owner in settings.owner_numbers) if solicitante else False
+
+    # Se chat_origem estiver vazio, verifica se ao menos quem chamou é owner
+    if not is_owner and not is_iag_group:
+        return "⛔ [Salvaguarda Omie]: O acesso aos dados do ERP Omie é estritamente restrito ao canal privado do Administrador e ao Grupo IAG Sócios."
+
     app_key = os.getenv("OMIE_APP_KEY", "")
     app_secret = os.getenv("OMIE_APP_SECRET", "")
     
     if not app_key or not app_secret:
         return (
             "⚠️ [Omie IAG]: As credenciais de API do Omie (OMIE_APP_KEY e OMIE_APP_SECRET) "
-            "ainda não foram configuradas no ambiente. Peça ao Junior para configurá-las."
+            "ainda não foram localizadas no ambiente do servidor. Peça ao Junior para configurá-las."
         )
 
     modulo_clean = str(modulo).strip().lower()
     headers = {"Content-Type": "application/json"}
     
+    # Se não for o Junior, limitar rigidamente aos 3 módulos permitidos
+    if not is_owner:
+        if modulo_clean not in ["contas_a_receber", "receber", "recebimento", "contas_a_pagar", "pagar", "pagamento", "estoque", "produtos", "reagentes"]:
+            return "⛔ [Salvaguarda IAG]: Para membros do grupo, o acesso ao Omie é restrito a: Contas a Pagar, Contas a Receber e Estoque."
+
     try:
         if modulo_clean in ["contas_a_receber", "receber", "recebimento"]:
             endpoint = "https://app.omie.com.br/api/v1/financas/contareceber/"
