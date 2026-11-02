@@ -32,6 +32,13 @@ class Settings:
         return os.getenv("OWNER_NUMBERS", "554388597348,5543988597348")
 
     @property
+    def ALLOWED_GROUPS_RAW(self) -> str:
+        return os.getenv(
+            "ALLOWED_GROUPS",
+            "120363147621109705@g.us,120363064087395658@g.us,120363423519539092@g.us"
+        )
+
+    @property
     def DB_PATH(self) -> str:
         return os.getenv("DB_PATH", "data/conversations.db")
 
@@ -72,5 +79,18 @@ class Settings:
             if cleaned:
                 numbers.append(cleaned)
         return numbers
+
+    @property
+    def allowed_groups(self) -> list[str]:
+        """Retorna a lista de IDs de grupos autorizados (ex: 120363147621109705@g.us ou apenas dígitos)."""
+        groups = []
+        for g in self.ALLOWED_GROUPS_RAW.split(","):
+            cleaned = g.strip()
+            if cleaned:
+                groups.append(cleaned)
+                digits = "".join(filter(str.isdigit, cleaned.split("@")[0]))
+                if digits and digits not in groups:
+                    groups.append(digits)
+        return groups
 
 settings = Settings()

@@ -244,42 +244,72 @@ async def webhook_evolution(request: Request):
             return JSONResponse({"status": "ignored", "reason": "bot_own_message"})
 
         remote_jid = key.get("remoteJid", "")
-        sender_number = "".join(filter(str.isdigit, remote_jid.split("@")[0]))
+        is_group = "@g.us" in remote_jid
+        chat_target = remote_jid if is_group else "".join(filter(str.isdigit, remote_jid.split("@")[0]))
+        
+        participant = key.get("participant", "") or payload_data.get("participant", "")
+        sender_digits = "".join(filter(str.isdigit, (participant or remote_jid).split("@")[0]))
 
-        # Se fromMe == True (ex: enviando mensagem para si mesmo no WhatsApp)
-        # só aceita se o número do remetente for um dono autorizado
+        # Verifica se é grupo autorizado
+        is_allowed_group = False
+        if is_group:
+            group_id = remote_jid.split("@")[0]
+            is_allowed_group = any(g in remote_jid or group_id in g for g in settings.allowed_groups)
+
+        # Se fromMe == True (ex: enviando mensagem para si mesmo no WhatsApp ou enviada pelo dono no grupo)
         if key.get("fromMe") is True:
-            is_owner = any(owner in sender_number or sender_number in owner for owner in settings.owner_numbers)
-            if not is_owner:
+            is_owner = any(owner in sender_digits or sender_digits in owner for owner in settings.owner_numbers)
+            if not is_owner and not is_allowed_group:
                 return JSONResponse({"status": "ignored", "reason": "message_from_me"})
 
-        # Segurança: Verifica se o número remetente está na lista de números autorizados
-        authorized = any(owner in sender_number or sender_number in owner for owner in settings.owner_numbers)
-        if not authorized:
-            print(f"⚠️ [Security] Mensagem recebida de número não autorizado: {sender_number}")
-            return JSONResponse({"status": "unauthorized", "reason": "number_not_in_owner_list"})
+        # Segurança: No privado exige ser dono; em grupo exige que o grupo esteja autorizado
+        if is_group:
+            if not is_allowed_group:
+                print(f"⚠️ [Security] Mensagem recebida de grupo não autorizado: {remote_jid}")
+                return JSONResponse({"status": "unauthorized", "reason": "group_not_allowed"})
+        else:
+            authorized = any(owner in sender_digits or sender_digits in owner for owner in settings.owner_numbers)
+            if not authorized:
+                print(f"⚠️ [Security] Mensagem recebida de número não autorizado: {sender_digits}")
+                return JSONResponse({"status": "unauthorized", "reason": "number_not_in_owner_list"})
 
         message = payload_data.get("message", {})
+
+        # Extrai o texto da mensagem (ou legenda) para verificar menção em grupo
+        message_text = (
+            message.get("conversation") or
+            message.get("extendedTextMessage", {}).get("text") or
+            message.get("imageMessage", {}).get("caption") or
+            message.get("documentMessage", {}).get("caption") or
+            message.get("documentWithCaptionMessage", {}).get("message", {}).get("documentMessage", {}).get("caption") or
+            ""
+        )
+
+        # Regra de Grupo: Só responde se contiver @aura ou aura (case-insensitive)
+        if is_group:
+            has_trigger = "@aura" in message_text.lower() or message_text.lower().startswith("aura")
+            if not has_trigger:
+                return JSONResponse({"status": "ignored", "reason": "group_message_without_aura_mention"})
 
         # Verifica se é mensagem de áudio (audioMessage)
         audio_msg = message.get("audioMessage")
         if audio_msg:
             raw_mime = audio_msg.get("mimetype", "audio/ogg")
             mimetype = raw_mime.split(";")[0]
-            print(f"🎙️ [Áudio Recebido de {sender_number}]: formato {mimetype}")
-            task = BackgroundTask(process_whatsapp_audio, sender_number, payload_data, mimetype, key)
-            return JSONResponse({"status": "processing_audio", "sender": sender_number}, background=task)
+            print(f"🎙️ [Áudio Recebido de {chat_target}]: formato {mimetype}")
+            task = BackgroundTask(process_whatsapp_audio, chat_target, payload_data, mimetype, key)
+            return JSONResponse({"status": "processing_audio", "sender": chat_target}, background=task)
 
         # Verifica se é mensagem de imagem (imageMessage)
         image_msg = message.get("imageMessage")
         if image_msg:
             mimetype = image_msg.get("mimetype", "image/jpeg").split(";")[0]
             caption = image_msg.get("caption", "")
-            print(f"🖼️ [Imagem Recebida de {sender_number}]: {mimetype} | Legenda: {caption}")
+            print(f"🖼️ [Imagem Recebida de {chat_target}]: {mimetype} | Legenda: {caption}")
             task = BackgroundTask(
-                process_whatsapp_media, sender_number, payload_data, mimetype, caption, "", False, key
+                process_whatsapp_media, chat_target, payload_data, mimetype, caption, "", False, key
             )
-            return JSONResponse({"status": "processing_image", "sender": sender_number}, background=task)
+            return JSONResponse({"status": "processing_image", "sender": chat_target}, background=task)
 
         # Verifica se é documento (documentMessage ou documentWithCaptionMessage)
         doc_msg = (
@@ -290,26 +320,19 @@ async def webhook_evolution(request: Request):
             mimetype = doc_msg.get("mimetype", "application/pdf").split(";")[0]
             caption = doc_msg.get("caption", "")
             file_name = doc_msg.get("fileName", "documento")
-            print(f"📄 [Documento Recebido de {sender_number}]: {file_name} ({mimetype})")
+            print(f"📄 [Documento Recebido de {chat_target}]: {file_name} ({mimetype})")
             task = BackgroundTask(
-                process_whatsapp_media, sender_number, payload_data, mimetype, caption, file_name, True, key
+                process_whatsapp_media, chat_target, payload_data, mimetype, caption, file_name, True, key
             )
-            return JSONResponse({"status": "processing_document", "sender": sender_number}, background=task)
-
-        # Extrai o texto da mensagem (conversation ou extendedTextMessage)
-        message_text = (
-            message.get("conversation") or
-            message.get("extendedTextMessage", {}).get("text") or
-            ""
-        )
+            return JSONResponse({"status": "processing_document", "sender": chat_target}, background=task)
 
         if not message_text:
             return JSONResponse({"status": "ignored", "reason": "no_supported_content"})
 
-        print(f"📩 [Mensagem Recebida de {sender_number}]: {message_text}")
+        print(f"📩 [Mensagem Recebida de {chat_target}]: {message_text}")
 
         # Processa texto em background
-        task = BackgroundTask(process_whatsapp_message, sender_number, message_text, key)
-        return JSONResponse({"status": "processing", "sender": sender_number}, background=task)
+        task = BackgroundTask(process_whatsapp_message, chat_target, message_text, key)
+        return JSONResponse({"status": "processing", "sender": chat_target}, background=task)
 
     return JSONResponse({"status": "ignored", "event": event})
