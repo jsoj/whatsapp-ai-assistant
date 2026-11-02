@@ -296,12 +296,6 @@ async def webhook_evolution(request: Request):
             ""
         )
 
-        # Regra de Grupo: Só responde se contiver @aura ou aura (case-insensitive)
-        if is_group:
-            has_trigger = "@aura" in message_text.lower() or message_text.lower().startswith("aura")
-            if not has_trigger:
-                return JSONResponse({"status": "ignored", "reason": "group_message_without_aura_mention"})
-
         # Verifica se é mensagem de áudio (audioMessage)
         audio_msg = message.get("audioMessage")
         if audio_msg:
@@ -310,6 +304,12 @@ async def webhook_evolution(request: Request):
             print(f"🎙️ [Áudio Recebido de {chat_target}]: formato {mimetype}")
             task = BackgroundTask(process_whatsapp_audio, chat_target, payload_data, mimetype, key)
             return JSONResponse({"status": "processing_audio", "sender": chat_target}, background=task)
+
+        # Regra de Grupo para mensagens de texto/mídia: Só responde se contiver @aura ou aura
+        if is_group:
+            has_trigger = "@aura" in message_text.lower() or message_text.lower().startswith("aura")
+            if not has_trigger:
+                return JSONResponse({"status": "ignored", "reason": "group_message_without_aura_mention"})
 
         # Verifica se é mensagem de imagem (imageMessage)
         image_msg = message.get("imageMessage")
