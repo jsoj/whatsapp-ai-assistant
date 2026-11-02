@@ -35,7 +35,7 @@ class Settings:
     def ALLOWED_GROUPS_RAW(self) -> str:
         return os.getenv(
             "ALLOWED_GROUPS",
-            "120363147621109705@g.us,120363064087395658@g.us,120363423519539092@g.us"
+            "120363147621109705@g.us,120363064087395658@g.us"
         )
 
     @property
