@@ -199,12 +199,13 @@ async def route_and_execute(
     phone_number: str,
     prompt: str,
     history: list[dict] = None,
-    custom_system_instruction: str = None
+    custom_system_instruction: str = None,
+    sender_digits: str = None
 ) -> str:
     """
     Roteador Inteligente Híbrido:
     1. Comandos Instantâneos (<0.1s)
-    2. Fast-Path (Gemini 2.5 Flash + Tools + Contexto em ~2s)
+    2. Fast-Path (Gemini 2.5 Flash + Tools + Contexto em ~2s) com RBAC de ferramentas
     3. Deep-Path (Subprocesso Antigravity CLI `agy` quando solicitado ou modo=agy)
     """
     clean = prompt.strip()
@@ -230,13 +231,14 @@ async def route_and_execute(
 
     # 4. Rota Rápida Padrão (Fast-Path: Gemini 2.5 Flash + Tools + Memória em ~1.5-2.5s)
     start_t = time.time()
-    print(f"🚀 [Fast-Path] Processando mensagem para {phone_number} via Gemini 2.5 Flash + Tools...")
+    print(f"🚀 [Fast-Path] Processando mensagem para {phone_number} (sender: {sender_digits}) via Gemini 2.5 Flash + Tools...")
     response = await asyncio.to_thread(
         generate_ai_response,
         phone_number,
         clean,
         history or [],
-        custom_system_instruction
+        custom_system_instruction,
+        sender_digits
     )
     print(f"⚡ [Fast-Path Finished] Concluído em {time.time() - start_t:.2f}s")
     return response

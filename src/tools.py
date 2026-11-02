@@ -568,6 +568,84 @@ def enviar_email_aura(conta: str = "gmail_agromarkers", para: str = "", assunto:
     except Exception as e:
         return f"Erro ao enviar e-mail via AURA ({conta}): {e}"
 
+def consultar_omie_iag(modulo: str, filtro: str = "", pagina: int = 1) -> str:
+    """
+    Consulta o ERP Omie do Instituto Agro Genética (IAG).
+    Módulos disponíveis:
+    - 'contas_a_receber': Títulos a receber de clientes, vencimentos, valores e status de pagamento.
+    - 'contas_a_pagar': Títulos a pagar de fornecedores, serviços e compras do laboratório.
+    - 'estoque': Posição e movimentação de estoque de insumos, reagentes e consumíveis do laboratório.
+    
+    ATENÇÃO: Saldos de contas correntes e aplicações bancárias NÃO estão disponíveis nesta ferramenta (Regra de Salvaguarda IAG).
+    
+    Args:
+        modulo: 'contas_a_receber', 'contas_a_pagar' ou 'estoque'.
+        filtro: Nome do cliente, fornecedor ou produto para filtrar (opcional).
+        pagina: Página de registros (padrão 1).
+    """
+    app_key = os.getenv("OMIE_APP_KEY", "")
+    app_secret = os.getenv("OMIE_APP_SECRET", "")
+    
+    if not app_key or not app_secret:
+        return (
+            "⚠️ [Omie IAG]: As credenciais de API do Omie (OMIE_APP_KEY e OMIE_APP_SECRET) "
+            "ainda não foram configuradas no ambiente. Peça ao Junior para configurá-las."
+        )
+
+    modulo_clean = str(modulo).strip().lower()
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        if modulo_clean in ["contas_a_receber", "receber", "recebimento"]:
+            endpoint = "https://app.omie.com.br/api/v1/financas/contareceber/"
+            call = "ListarContasReceber"
+            param = {
+                "pagina": pagina,
+                "registros_por_pagina": 20,
+                "apenas_importado_api": "N"
+            }
+            if filtro:
+                param["filtrar_por_cliente"] = filtro
+
+        elif modulo_clean in ["contas_a_pagar", "pagar", "pagamento"]:
+            endpoint = "https://app.omie.com.br/api/v1/financas/contapagar/"
+            call = "ListarContasPagar"
+            param = {
+                "pagina": pagina,
+                "registros_por_pagina": 20,
+                "apenas_importado_api": "N"
+            }
+            if filtro:
+                param["filtrar_por_fornecedor"] = filtro
+
+        elif modulo_clean in ["estoque", "produtos", "reagentes"]:
+            endpoint = "https://app.omie.com.br/api/v1/estoque/consultaestoque/"
+            call = "ListarPosEstoque"
+            param = {
+                "pagina": pagina,
+                "registros_por_pagina": 20
+            }
+        else:
+            return f"⚠️ Módulo Omie desconhecido: '{modulo}'. Use 'contas_a_receber', 'contas_a_pagar' ou 'estoque'."
+
+        body = {
+            "app_key": app_key,
+            "app_secret": app_secret,
+            "call": call,
+            "param": [param]
+        }
+
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.post(endpoint, json=body, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                return f"✅ [Omie IAG - {call}]: {json.dumps(data, ensure_ascii=False)[:3000]}"
+            else:
+                return f"❌ Erro Omie ({resp.status_code}): {resp.text}"
+
+    except Exception as e:
+        return f"❌ Erro ao consultar Omie IAG: {e}"
+
 # Mapeamento completo de ferramentas executáveis autonomamente pelo Gemini
 AVAILABLE_TOOLS = [
     send_email,
@@ -585,4 +663,41 @@ AVAILABLE_TOOLS = [
     consultar_cofre_notas,
     consultar_emails_aura,
     enviar_email_aura,
+    consultar_omie_iag,
 ]
+
+# Ferramentas permitidas para membros do grupo IAG (fora o Junior)
+IAG_GROUP_TOOLS = [
+    consultar_omie_iag,
+    consultar_cofre_notas,
+    check_domain_dns,
+    get_system_status,
+]
+
+# Ferramentas permitidas para o grupo Família/Casa (fora o Junior)
+FAMILY_GROUP_TOOLS = [
+    registrar_gasto_pessoal,
+    gerar_relatorio_gastos,
+    gerenciar_agenda_e_casa,
+    consultar_cofre_notas,
+]
+
+def get_tools_for_request(chat_target: str, sender_digits: str) -> list:
+    """
+    Aplica RBAC estrito para ferramentas:
+    - Junior (Owner): Acesso a TODAS as ferramentas.
+    - Grupo IAG: Apenas ferramentas de consulta IAG (Omie, notas públicas, status).
+    - Grupo Família/Casa: Apenas ferramentas financeiras domésticas e agenda da casa.
+    - Qualquer outro terceiro: Lista vazia (apenas conversa/LLM puro sem ferramentas).
+    """
+    is_owner = any(owner in sender_digits or sender_digits in owner for owner in settings.owner_numbers)
+    if is_owner:
+        return AVAILABLE_TOOLS
+
+    # Se for membro em grupo autorizado
+    if "120363423519539092" in chat_target:  # Grupo IAG
+        return IAG_GROUP_TOOLS
+    elif "120363147621109705" in chat_target or "120363064087395658" in chat_target:  # Grupos Casal e Casa
+        return FAMILY_GROUP_TOOLS
+
+    return []

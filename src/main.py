@@ -56,11 +56,16 @@ def health_check():
         "authorized_owners": settings.owner_numbers
     }
 
-async def process_whatsapp_message(sender_number: str, message_text: str, message_key: dict = None):
+async def process_whatsapp_message(
+    sender_number: str,
+    message_text: str,
+    message_key: dict = None,
+    sender_digits: str = None
+):
     """
     Processa a mensagem de texto:
-    1. Envia status 'digitando...' e reação ⚡/🤖 no WhatsApp
-    2. Executa no Roteador Híbrido (Comandos Instantâneos <0.1s | Fast-Path ~2s | AGY Deep Agent)
+    1. Envia status 'digitando...' e reação ⚡ no WhatsApp
+    2. Executa no Roteador Híbrido com RBAC de ferramentas por participante
     3. Salva no banco de dados
     4. Envia resposta em texto (e áudio inteligente se aplicável) e atualiza reação para ✅
     """
@@ -75,8 +80,14 @@ async def process_whatsapp_message(sender_number: str, message_text: str, messag
         history = get_recent_history(cleaned_sender, limit=14)
         add_message(cleaned_sender, "user", message_text)
 
-        # Executa pelo Roteador Inteligente Híbrido
-        ai_response = await route_and_execute(cleaned_sender, message_text, history)
+        # Executa pelo Roteador Inteligente Híbrido com RBAC do emissor
+        caller_digits = sender_digits or cleaned_sender
+        ai_response = await route_and_execute(
+            cleaned_sender,
+            message_text,
+            history,
+            sender_digits=caller_digits
+        )
 
         # Salva a resposta da IA no banco
         add_message(cleaned_sender, "model", ai_response)
@@ -329,10 +340,10 @@ async def webhook_evolution(request: Request):
         if not message_text:
             return JSONResponse({"status": "ignored", "reason": "no_supported_content"})
 
-        print(f"📩 [Mensagem Recebida de {chat_target}]: {message_text}")
+        print(f"📩 [Mensagem Recebida de {chat_target} (de: {sender_digits})]: {message_text}")
 
-        # Processa texto em background
-        task = BackgroundTask(process_whatsapp_message, chat_target, message_text, key)
+        # Processa texto em background com identificador real do emissor para RBAC
+        task = BackgroundTask(process_whatsapp_message, chat_target, message_text, key, sender_digits)
         return JSONResponse({"status": "processing", "sender": chat_target}, background=task)
 
     return JSONResponse({"status": "ignored", "event": event})

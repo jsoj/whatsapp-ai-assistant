@@ -5,7 +5,7 @@ from google import genai
 from google.genai import types
 from src.config import settings
 from src.context_loader import load_agents_context
-from src.tools import AVAILABLE_TOOLS
+from src.tools import AVAILABLE_TOOLS, get_tools_for_request
 
 FALLBACK_MODELS = [
     "gemini-2.5-flash",
@@ -41,11 +41,13 @@ def generate_ai_response(
     phone_number: str,
     user_text: str,
     history: list[dict] = None,
-    custom_system_instruction: str = None
+    custom_system_instruction: str = None,
+    sender_digits: str = None
 ) -> str:
     """
     Gera uma resposta rápida (~1.5s-2.5s) com suporte a Function Calling autônomo,
     histórico de conversa e Fallback automático de modelos.
+    Aplica RBAC em tools baseado em sender_digits e phone_number.
     """
     client = get_client()
     system_instruction = custom_system_instruction or load_agents_context()
@@ -54,6 +56,10 @@ def generate_ai_response(
         primary_model = "gemini-2.5-flash"
 
     models_to_try = [primary_model] + [m for m in FALLBACK_MODELS if m != primary_model]
+
+    # Ferramentas filtradas por privilégios RBAC
+    caller_digits = sender_digits or phone_number
+    active_tools = get_tools_for_request(phone_number, caller_digits)
 
     # Se o último item do history já for a mensagem atual do usuário, remove para não duplicar
     clean_history = list(history or [])
@@ -66,7 +72,7 @@ def generate_ai_response(
         try:
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                tools=AVAILABLE_TOOLS,
+                tools=active_tools if active_tools else None,
                 temperature=0.4,
                 thinking_config=types.ThinkingConfig(thinking_budget=0)
             )
