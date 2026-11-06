@@ -431,4 +431,11 @@ async def webhook_evolution(request: Request):
         task = BackgroundTask(process_whatsapp_message, chat_target, message_text, key, sender_digits)
         return JSONResponse({"status": "processing", "sender": chat_target}, background=task)
 
+    # Eventos de conexão da Evolution API
+    if event in ["connection.update", "status.instance"]:
+        payload_data = data.get("data", {})
+        state = payload_data.get("state") or payload_data.get("status")
+        print(f"📡 [Evolution Event] {event}: state={state}")
+        return JSONResponse({"status": "acknowledged", "state": state})
+
     return JSONResponse({"status": "ignored", "event": event})
