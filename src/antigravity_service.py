@@ -240,6 +240,9 @@ async def route_and_execute(
         custom_system_instruction,
         sender_digits
     )
+    # Sanitização universal de ** para * na saída do Fast-Path
+    if response:
+        response = re.sub(r"\*\*([^\*\n]+)\*\*", r"*\1*", response)
     print(f"⚡ [Fast-Path Finished] Concluído em {time.time() - start_t:.2f}s")
     return response
 
@@ -281,12 +284,16 @@ def clean_agy_output(raw_output: str) -> str:
 
         # Remove links markdown [texto](url) mantendo apenas o texto ou URL limpa
         stripped_links = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", line)
-        clean_lines.append(stripped_links)
+        
+        # Converte markdown padrão **negrito** para padrão WhatsApp *negrito*
+        whatsapp_bold = re.sub(r"\*\*([^\*]+)\*\*", r"*\1*", stripped_links)
+        clean_lines.append(whatsapp_bold)
     
     result = "\n".join(clean_lines).strip()
+    # Converte qualquer ocorrência residual de **texto** em *texto*
+    result = re.sub(r"\*\*([^\*\n]+)\*\*", r"*\1*", result)
     # Remove excesso de quebras consecutivas
     result = re.sub(r"\n{3,}", "\n\n", result)
-    return result or "Ação processada com sucesso pelo Antigravity."
     return result or "Ação processada com sucesso pelo Antigravity."
 
 async def run_antigravity_agent(phone_number: str, prompt: str) -> str:
