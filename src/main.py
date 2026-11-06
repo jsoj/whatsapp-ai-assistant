@@ -1,9 +1,10 @@
 import os
 import asyncio
 from contextlib import asynccontextmanager
+import httpx
 from fastapi import FastAPI, Request, HTTPException
 from starlette.background import BackgroundTask
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from src.config import settings
 from src.memory import init_db, add_message, get_recent_history
 from src.gemini_service import (
@@ -55,6 +56,90 @@ def health_check():
         "engine": "antigravity-agent" if settings.USE_ANTIGRAVITY_AGENT else "gemini-direct",
         "authorized_owners": settings.owner_numbers
     }
+
+@app.get("/qrcode", response_class=HTMLResponse)
+async def qrcode_page():
+    """Página de reconexão do WhatsApp via QR Code com auto-refresh."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.EVOLUTION_URL}/instance/connect/{settings.EVOLUTION_INSTANCE}",
+                headers={"apikey": settings.EVOLUTION_APIKEY}
+            )
+            data = resp.json()
+            status_resp = await client.get(
+                f"{settings.EVOLUTION_URL}/instance/connectionState/{settings.EVOLUTION_INSTANCE}",
+                headers={"apikey": settings.EVOLUTION_APIKEY}
+            )
+            status_data = status_resp.json()
+    except Exception as e:
+        return HTMLResponse(f"<h3>Erro ao consultar Evolution API: {e}</h3>", status_code=500)
+
+    state = status_data.get("instance", {}).get("state", "desconhecido")
+    base64_img = data.get("base64", "")
+
+    if state == "open":
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>AURA ✨ Conectada</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; }
+                .card { background: #1e293b; padding: 2.5rem; border-radius: 1rem; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155; }
+                h1 { color: #10b981; margin-bottom: 0.5rem; }
+                p { color: #94a3b8; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>✅ AURA ✨ Conectada!</h1>
+                <p>O WhatsApp está conectado e pronto para responder no canal oficial.</p>
+            </div>
+        </body>
+        </html>
+        """)
+
+    return HTMLResponse(f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Reconectar AURA ✨</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta http-equiv="refresh" content="15">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; padding: 1rem; }}
+            .card {{ background: #1e293b; padding: 2rem; border-radius: 1.25rem; text-align: center; max-width: 420px; width: 100%; box-shadow: 0 20px 30px rgba(0,0,0,0.4); border: 1px solid #334155; }}
+            h1 {{ font-size: 1.5rem; margin-top: 0; color: #38bdf8; }}
+            .badge {{ display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; background: #dc2626; color: white; font-size: 0.85rem; font-weight: 600; margin-bottom: 1rem; }}
+            .qr-box {{ background: white; padding: 1rem; border-radius: 1rem; display: inline-block; margin: 1rem 0; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }}
+            img {{ width: 260px; height: 260px; display: block; }}
+            ol {{ text-align: left; padding-left: 1.25rem; color: #cbd5e1; font-size: 0.95rem; line-height: 1.5; }}
+            .refresh-note {{ color: #94a3b8; font-size: 0.8rem; margin-top: 1rem; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <span class="badge">Status: {state.upper()}</span>
+            <h1>Reconectar AURA ✨</h1>
+            <p style="color: #94a3b8; font-size: 0.9rem;">Escaneie o QR Code abaixo com o WhatsApp do seu celular:</p>
+            <div class="qr-box">
+                <img src="{base64_img}" alt="QR Code WhatsApp" />
+            </div>
+            <ol>
+                <li>Abra o <strong>WhatsApp</strong> no celular</li>
+                <li>Toque em <strong>Aparelhos Conectados</strong></li>
+                <li>Selecione <strong>Conectar um aparelho</strong></li>
+                <li>Aponte a câmera para o QR Code acima</li>
+            </ol>
+            <p class="refresh-note">🔄 Esta página atualiza automaticamente a cada 15 segundos se expirar.</p>
+        </div>
+    </body>
+    </html>
+    """)
 
 async def process_whatsapp_message(
     sender_number: str,
