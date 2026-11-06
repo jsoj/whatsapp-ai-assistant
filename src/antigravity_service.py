@@ -252,37 +252,41 @@ def get_brain_sessions() -> set[str]:
     return {d.name for d in brain_dir.iterdir() if d.is_dir() and len(d.name) == 36}
 
 def clean_agy_output(raw_output: str) -> str:
-    """Limpa avisos do CLI e converte eventuais tabelas/títulos markdown para padrão WhatsApp."""
+    """Limpa avisos do CLI e converte eventuais tabelas/títulos markdown para padrão estrito WhatsApp."""
     lines = raw_output.splitlines()
     clean_lines = []
-    in_table = False
     
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("warning: conversation") or stripped.startswith("warn:"):
             continue
             
-        # Converte títulos markdown (#, ##, ###) em negrito com marcador
+        # Converte títulos markdown (#, ##, ###) em negrito com quebra limpa
         if re.match(r"^#{1,6}\s+", stripped):
             clean_title = re.sub(r"^#{1,6}\s+", "", stripped)
             clean_lines.append(f"\n*{clean_title}*")
             continue
             
-        # Converte separadores de tabela (|---|---|)
+        # Ignora separadores de tabela (|---|---|)
         if re.match(r"^\|?(\s*:?-+:?\s*\|)+\s*$", stripped):
-            in_table = True
             continue
             
-        # Converte linhas de tabela (| A | B | C |) em lista com marcadores
+        # Converte linhas de tabela (| A | B | C |) em tópicos com marcadores
         if stripped.startswith("|") and stripped.endswith("|"):
             cells = [c.strip() for c in stripped.strip("|").split("|")]
-            if cells:
-                clean_lines.append("• " + " — ".join([c for c in cells if c]))
+            valid_cells = [c for c in cells if c and not re.match(r"^:?-+:?$", c)]
+            if valid_cells:
+                clean_lines.append("• " + " — ".join(valid_cells))
             continue
 
-        clean_lines.append(line)
+        # Remove links markdown [texto](url) mantendo apenas o texto ou URL limpa
+        stripped_links = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", line)
+        clean_lines.append(stripped_links)
     
     result = "\n".join(clean_lines).strip()
+    # Remove excesso de quebras consecutivas
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result or "Ação processada com sucesso pelo Antigravity."
     return result or "Ação processada com sucesso pelo Antigravity."
 
 async def run_antigravity_agent(phone_number: str, prompt: str) -> str:
