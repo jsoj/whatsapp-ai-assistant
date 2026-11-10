@@ -197,41 +197,49 @@ async def process_whatsapp_message(
         if message_key:
             await send_reaction(message_key, "❌")
 
-async def process_whatsapp_audio(sender_number: str, payload_data: dict, mimetype: str, message_key: dict = None):
+async def process_whatsapp_audio(sender_number: str, payload_data: dict, mimetype: str, message_key: dict = None, is_group: bool = False):
     """
     Processa mensagem de áudio:
     1. Baixa o áudio via Evolution API
     2. Transcreve o áudio com Gemini Multimodal (<1s)
-    3. Envia o texto resultante para o Roteador Inteligente (Fast-Path ~2s ou AGY)
-    4. Responde em texto e voz (Francisca Neural) se modo de voz permitir (auto/on)
+    3. Se for em grupo, verifica se contém gatilho explícito (@aura ou aura)
+    4. Envia o texto resultante para o Roteador Inteligente (Fast-Path ~2s ou AGY)
+    5. Responde em texto e voz (Francisca Neural) se modo de voz permitir (auto/on)
     """
     cleaned_sender = "".join(filter(str.isdigit, sender_number))
     try:
-        await send_presence(cleaned_sender, "recording")
-        if message_key:
-            await send_reaction(message_key, "🎙️")
-
         # 1. Baixa o conteúdo Base64 do áudio
         audio_base64 = await fetch_media_base64(payload_data)
         
         if not audio_base64:
             print(f"⚠️ [Audio Download Warning] Não foi possível baixar áudio de {cleaned_sender}")
-            await send_text_message(cleaned_sender, "Recebi seu áudio, mas não consegui realizar o download para transcrição. Por favor, tente enviar em texto.")
             return
 
         # 2. Transcrição do áudio ultrarrápida (Gemini Flash async)
         transcription = await transcribe_audio(audio_base64, mimetype)
-        history = get_recent_history(cleaned_sender, limit=14)
-        add_message(cleaned_sender, "user", f"[Áudio]: {transcription or 'Áudio recebido'}")
+        if not transcription:
+            print(f"⚠️ [Audio Empty] Transcrição vazia para áudio de {cleaned_sender}")
+            return
 
-        # 3. Execução no Roteador Inteligente (ou fallback multimodal direto se transcrição vier vazia)
-        if transcription:
-            print(f"📝 [Transcrição Áudio de {cleaned_sender}]: {transcription}")
-            ai_response = await route_and_execute(cleaned_sender, transcription, history)
-        else:
-            ai_response = await asyncio.to_thread(
-                generate_ai_response_from_audio, cleaned_sender, audio_base64, mimetype
-            )
+        # Regra Estrita para Grupos: NUNCA responder se não foi chamada explicitamente por @aura ou aura
+        if is_group:
+            lower_trans = transcription.lower()
+            has_trigger = "@aura" in lower_trans or "aura" in lower_trans
+            if not has_trigger:
+                print(f"🔇 [Áudio Ignorado em Grupo {cleaned_sender}]: Não continha menção à Aura. Texto: '{transcription[:60]}...'")
+                return
+
+        # Somente sinaliza presença e reação se for responder
+        await send_presence(cleaned_sender, "recording")
+        if message_key:
+            await send_reaction(message_key, "🎙️")
+
+        history = get_recent_history(cleaned_sender, limit=14)
+        add_message(cleaned_sender, "user", f"[Áudio]: {transcription}")
+
+        # 3. Execução no Roteador Inteligente
+        print(f"📝 [Transcrição Áudio de {cleaned_sender}]: {transcription}")
+        ai_response = await route_and_execute(cleaned_sender, transcription, history)
 
         add_message(cleaned_sender, "model", ai_response)
 
@@ -387,7 +395,7 @@ async def webhook_evolution(request: Request):
             raw_mime = audio_msg.get("mimetype", "audio/ogg")
             mimetype = raw_mime.split(";")[0]
             print(f"🎙️ [Áudio Recebido de {chat_target}]: formato {mimetype}")
-            task = BackgroundTask(process_whatsapp_audio, chat_target, payload_data, mimetype, key)
+            task = BackgroundTask(process_whatsapp_audio, chat_target, payload_data, mimetype, key, is_group)
             return JSONResponse({"status": "processing_audio", "sender": chat_target}, background=task)
 
         # Regra de Grupo para mensagens de texto/mídia: Só responde se contiver @aura ou aura
