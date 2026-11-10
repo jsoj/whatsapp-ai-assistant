@@ -147,6 +147,26 @@ def generate_ai_response_from_audio(phone_number: str, audio_base64: str, mime_t
 
     return f"⚠️ Ocorreu um erro ao processar seu áudio: {last_error}"
 
+def _extract_text_from_docx(raw_bytes: bytes) -> str | None:
+    """Extrai texto puro de arquivos DOCX (Word) sem dependência externa."""
+    try:
+        import zipfile
+        import xml.etree.ElementTree as ET
+        import io
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as z:
+            xml_content = z.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            namespaces = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            texts = []
+            for p in tree.iterfind(".//w:p", namespaces):
+                p_text = "".join(node.text for node in p.iterfind(".//w:t", namespaces) if node.text)
+                if p_text.strip():
+                    texts.append(p_text.strip())
+            return "\n".join(texts)
+    except Exception as e:
+        print(f"⚠️ [Docx Extraction Error]: {e}")
+        return None
+
 def generate_ai_response_from_media(
     phone_number: str,
     media_base64: str,
@@ -158,13 +178,31 @@ def generate_ai_response_from_media(
     default_tag: str = ""
 ) -> str:
     """
-    Processa imagens (comprovantes, recibos, prints, fotos) e documentos (PDF, TXT, CSV)
+    Processa imagens (comprovantes, recibos, prints, fotos) e documentos (PDF, TXT, CSV, DOCX)
     com Gemini 2.5 Flash Multimodal e acesso às ferramentas do Cofre e VPS.
     """
     client = get_client()
     system_instruction = custom_system_instruction or load_agents_context()
     raw_bytes = base64.b64decode(media_base64)
     clean_mime = (mime_type or "image/jpeg").split(";")[0].strip()
+
+    # Se for DOCX, converte diretamente para texto para evitar erro 500 da API Gemini
+    is_docx = "wordprocessingml" in clean_mime or (file_name and file_name.lower().endswith(".docx"))
+    if is_docx:
+        extracted_text = _extract_text_from_docx(raw_bytes)
+        if extracted_text:
+            prompt_doc = (
+                f"O usuário enviou o documento Word '{file_name or 'documento.docx'}'.\n"
+                f"Instrução do usuário: '{caption.strip() if caption else 'Analise detalhadamente o documento e apresente um resumo executivo claro e estruturado.'}'\n\n"
+                f"--- CONTEÚDO INTEGRAL DO DOCUMENTO ---\n{extracted_text[:35000]}\n--- FIM DO CONTEÚDO ---\n\n"
+                "Apresente a resposta formatada exclusivamente com os padrões nativos do WhatsApp (*negrito*, _itálico_, tópicos •, sem tabelas markdown e sem títulos #)."
+            )
+            return generate_ai_response(
+                phone_number=phone_number,
+                prompt=prompt_doc,
+                history=history or [],
+                custom_system_instruction=system_instruction
+            )
 
     media_part = types.Part.from_bytes(
         data=raw_bytes,
